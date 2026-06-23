@@ -4,8 +4,9 @@ WORKDIR /app
 
 # System deps for pdfplumber + weasyprint
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf2.0-0 \
-    libffi-dev shared-mime-info \
+    build-essential \
+    curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
