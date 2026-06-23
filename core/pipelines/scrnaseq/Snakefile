@@ -1,0 +1,82 @@
+# Single-cell RNA-seq pipeline template
+# Supports 10x Genomics Chromium (Cell Ranger → Seurat/Scanpy)
+
+configfile: "config.yaml"
+
+SAMPLES = config["samples"]
+TRANSCRIPTOME = config["cellranger_transcriptome"]
+RESULTS = config.get("results_dir", "results")
+THREADS = config.get("threads", 16)
+MEMORY = config.get("memory_gb", 64)
+MIN_CELLS = config.get("min_cells", 3)
+MIN_FEATURES = config.get("min_features", 200)
+MAX_MT_PERCENT = config.get("max_mt_percent", 20)
+RESOLUTION = config.get("clustering_resolution", 0.5)
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/cellranger/{{sample}}/outs/filtered_feature_bc_matrix/", sample=SAMPLES),
+        expand(f"{RESULTS}/seurat/{{sample}}_seurat.rds", sample=SAMPLES),
+        f"{RESULTS}/seurat/integrated.rds",
+        f"{RESULTS}/reports/scrnaseq_report.html",
+
+
+rule cellranger_count:
+    input:
+        fastqs=lambda wc: config["fastq_dirs"][wc.sample],
+        transcriptome=TRANSCRIPTOME,
+    output:
+        directory(f"{RESULTS}/cellranger/{{sample}}/outs/filtered_feature_bc_matrix/"),
+    log: f"{RESULTS}/logs/cellranger/{{sample}}.log"
+    threads: THREADS
+    resources: mem_mb=MEMORY * 1024
+    shell:
+        """
+        cellranger count \
+            --id={wildcards.sample} \
+            --transcriptome={input.transcriptome} \
+            --fastqs={input.fastqs} \
+            --sample={wildcards.sample} \
+            --localcores={threads} \
+            --localmem={MEMORY} \
+            --output-dir={RESULTS}/cellranger \
+            2>{log}
+        """
+
+
+rule seurat_per_sample:
+    input:
+        matrix=f"{RESULTS}/cellranger/{{sample}}/outs/filtered_feature_bc_matrix/",
+    output:
+        rds=f"{RESULTS}/seurat/{{sample}}_seurat.rds",
+        qc_plot=f"{RESULTS}/seurat/{{sample}}_qc.pdf",
+    log: f"{RESULTS}/logs/seurat/{{sample}}.log"
+    container: "docker://satijalab/seurat:5.0.0"
+    script:
+        "scripts/seurat_per_sample.R"
+
+
+rule seurat_integrate:
+    input:
+        rds=expand(f"{RESULTS}/seurat/{{sample}}_seurat.rds", sample=SAMPLES),
+    output:
+        integrated=f"{RESULTS}/seurat/integrated.rds",
+        umap=f"{RESULTS}/seurat/umap.pdf",
+        markers=f"{RESULTS}/seurat/markers.csv",
+    log: f"{RESULTS}/logs/seurat/integration.log"
+    container: "docker://satijalab/seurat:5.0.0"
+    script:
+        "scripts/seurat_integrate.R"
+
+
+rule generate_report:
+    input:
+        integrated=f"{RESULTS}/seurat/integrated.rds",
+        markers=f"{RESULTS}/seurat/markers.csv",
+    output:
+        f"{RESULTS}/reports/scrnaseq_report.html",
+    log: f"{RESULTS}/logs/report.log"
+    container: "docker://satijalab/seurat:5.0.0"
+    script:
+        "scripts/render_report.R"

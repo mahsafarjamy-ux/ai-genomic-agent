@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* ── Brand palette ─────────────────────────────────────────────────────── */
+:root {
+  --canvas:  #f3f3e6;   /* warm cream background */
+  --surface: #ffffff;   /* card / panel backgrounds */
+  --blush:   #d7afc7;   /* soft lavender-pink accent */
+  --zest:    #cfb12f;   /* warm gold highlight */
+  --flame:   #f05808;   /* primary CTA / orange */
+  --fuchsia: #e44c81;   /* secondary CTA / pink */
+  --amber:   #b46309;   /* warm amber for accents */
+  --border:  #e4e3d8;   /* subtle border */
+  --text:    #1c1a16;   /* primary text */
+  --muted:   #6b6760;   /* secondary text */
+  --dim:     #9c9892;   /* placeholder / disabled */
+}
+
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--text);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* ── Utility classes for brand colors ─────────────────────────────────── */
+.bg-canvas   { background: var(--canvas); }
+.bg-surface  { background: var(--surface); }
+.bg-flame    { background: var(--flame); }
+.bg-fuchsia-brand { background: var(--fuchsia); }
+.bg-blush    { background: var(--blush); }
+.bg-zest     { background: var(--zest); }
+.text-flame  { color: var(--flame); }
+.text-fuchsia-brand { color: var(--fuchsia); }
+.text-muted  { color: var(--muted); }
+.border-brand { border-color: var(--border); }
+.btn-flame   { background: var(--flame); color: #fff; }
+.btn-flame:hover { background: #d94e07; }
+.btn-fuchsia { background: var(--fuchsia); color: #fff; }
+.btn-fuchsia:hover { background: #cc3f71; }

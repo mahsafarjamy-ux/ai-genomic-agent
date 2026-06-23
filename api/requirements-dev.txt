@@ -1,0 +1,20 @@
+# Lightweight dev requirements — no PostgreSQL, no Redis, no Celery
+# Use this to start quickly: pip install -r api/requirements-dev.txt
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+anthropic==0.34.0
+pydantic==2.8.0
+python-multipart==0.0.9
+aiofiles==24.1.0
+httpx==0.27.0
+PyPDF2==3.0.1
+pdfplumber==0.11.0
+beautifulsoup4==4.12.3
+requests==2.32.3
+python-dotenv==1.0.1
+pyyaml==6.0.2
+flowio==1.3.0
+flowutils==1.1.0
+numpy==1.26.4
+pandas==2.2.2
+sqlalchemy==2.0.31

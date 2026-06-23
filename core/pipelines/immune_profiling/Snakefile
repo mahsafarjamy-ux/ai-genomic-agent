@@ -1,0 +1,102 @@
+# Immune Profiling Pipeline
+# TCR/BCR repertoire (TRUST4 from RNA-seq BAMs) + HLA typing (OptiType) +
+# Immune deconvolution (CIBERSORT/quanTIseq) + Neoantigen prediction (pVACtools)
+
+configfile: "config.yaml"
+
+SAMPLES         = config["samples"]
+GENOME_FA       = config["genome_fasta"]
+TRUST4_REF      = config["trust4_ref_dir"]
+OPTITYPE_REF    = config.get("optitype_hla_ref", "")
+VCF_DIR         = config.get("vcf_dir", "")          # somatic VCFs for neoantigen
+HLA_TYPES       = config.get("hla_types", {})         # pre-computed HLA types per sample
+RESULTS         = config.get("results_dir", "results")
+THREADS         = config.get("threads", 8)
+RUN_NEOANTIGEN  = config.get("run_neoantigen", False)
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/trust4/{{sample}}_airr.tsv", sample=SAMPLES),
+        expand(f"{RESULTS}/hla/{{sample}}_hla.tsv", sample=SAMPLES),
+        f"{RESULTS}/deconvolution/quantiseq_results.tsv",
+        f"{RESULTS}/repertoire/clonotype_summary.tsv",
+        *([f"{RESULTS}/neoantigen/{{sample}}_neoantigens.tsv" for sample in SAMPLES]
+          if RUN_NEOANTIGEN else []),
+
+
+rule trust4_repertoire:
+    input:
+        bam=lambda wc: config["bam"][wc.sample],
+        ref=TRUST4_REF,
+    output:
+        airr=f"{RESULTS}/trust4/{{sample}}_airr.tsv",
+        cdr3=f"{RESULTS}/trust4/{{sample}}_cdr3.out",
+    log: f"{RESULTS}/logs/trust4/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/trust4:1.1.0--h43eeafb_0"
+    shell:
+        """
+        run-trust4 -b {input.bam} \
+            -f {input.ref}/bcrtcr.fa \
+            --ref {input.ref}/human_IMGT+C.fa \
+            -t {threads} \
+            --od {RESULTS}/trust4 \
+            -o {wildcards.sample} 2>{log}
+        """
+
+
+rule optitype_hla:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output: f"{RESULTS}/hla/{{sample}}_hla.tsv"
+    log: f"{RESULTS}/logs/hla/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/optitype:1.3.5--py27_0"
+    shell:
+        """
+        OptiTypePipeline.py \
+            -i {input.r1} {input.r2} \
+            --dna -o {RESULTS}/hla/{wildcards.sample} \
+            -v 2>{log}
+        mv {RESULTS}/hla/{wildcards.sample}/*_result.tsv {output}
+        """
+
+
+rule quantiseq_deconvolution:
+    input:
+        counts=config.get("bulk_counts_matrix", ""),
+    output: f"{RESULTS}/deconvolution/quantiseq_results.tsv"
+    container: "docker://derstadtvom/quantiseq:latest"
+    script: "scripts/run_quantiseq.R"
+
+
+rule repertoire_summary:
+    input:
+        airr=expand(f"{RESULTS}/trust4/{{sample}}_airr.tsv", sample=SAMPLES),
+    output: f"{RESULTS}/repertoire/clonotype_summary.tsv"
+    container: "docker://satijalab/seurat:5.1.0"
+    script: "scripts/repertoire_summary.R"
+
+
+if RUN_NEOANTIGEN:
+    rule pvactools_neoantigen:
+        input:
+            vcf=lambda wc: f"{VCF_DIR}/{wc.sample}.filtered.vcf.gz",
+            hla=f"{RESULTS}/hla/{{sample}}_hla.tsv",
+        output: f"{RESULTS}/neoantigen/{{sample}}_neoantigens.tsv"
+        log: f"{RESULTS}/logs/neoantigen/{{sample}}.log"
+        container: "docker://griffithlab/pvactools:4.4.0"
+        run:
+            hla = open(input.hla).readlines()[1].split("\t")[1:7]
+            hla_str = ",".join(f"HLA-{a}" for a in hla if a.strip())
+            shell(f"""
+            pvacseq run {input.vcf} {wildcards.sample} \
+                {hla_str} \
+                MHCflurry MHCnuggetsI MHCnuggetsII NNalign NetMHC NetMHCIIpan NetMHCpan SMMPMBEC SMM \
+                {RESULTS}/neoantigen/{wildcards.sample} \
+                -e1 8,9,10,11 -e2 12,13,14,15,16,17,18 \
+                --iedb-retries 5 --keep-tmp-files 2>{log}
+            cp {RESULTS}/neoantigen/{wildcards.sample}/MHC_Class_I/*/combined/*.filtered.condensed.ranked.tsv {output}
+            """)

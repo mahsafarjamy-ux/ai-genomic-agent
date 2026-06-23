@@ -1,0 +1,11 @@
+aligner: star
+genome: GRCh38
+gtf: ''
+memory_gb: 37
+min_mapping_quality: 10
+remove_ribosomal_rna: false
+results_dir: /Users/User/Documents/ai-genomic-agent/results
+samplesheet_path: /Users/User/Documents/ai-genomic-agent/results/samplesheet.csv
+star_index: ''
+strandedness: auto
+threads: 31

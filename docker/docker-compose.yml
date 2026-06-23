@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  # FastAPI backend
+  api:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/genomic_agent
+      - REDIS_URL=redis://redis:6379/0
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      - ../:/app          # Mount whole project (read-only except results)
+      - uploads:/app/api/uploads
+      - work:/app/api/work
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  # Next.js frontend
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # PostgreSQL (analysis history, article library)
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: genomic_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Redis (job queue)
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
+  work:

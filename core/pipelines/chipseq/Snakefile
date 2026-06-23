@@ -1,0 +1,163 @@
+# ChIP-seq Pipeline
+# Bowtie2 → MACS3 → deepTools QC → ChIPseeker annotation → DiffBind
+
+configfile: "config.yaml"
+
+SAMPLES     = config["samples"]
+GENOME      = config["genome_fasta"]
+GENOME_IDX  = config["bowtie2_index"]
+CHROM_SIZES = config["chrom_sizes"]
+GTF         = config["gtf"]
+RESULTS     = config.get("results_dir", "results")
+THREADS     = config.get("threads", 8)
+PEAK_TYPE   = config.get("peak_type", "narrow")   # narrow | broad
+BLACKLIST   = config.get("blacklist_bed", "")      # ENCODE blacklist regions
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/peaks/{{sample}}_peaks.{PEAK_TYPE}Peak", sample=SAMPLES),
+        expand(f"{RESULTS}/bigwig/{{sample}}.bw", sample=SAMPLES),
+        f"{RESULTS}/qc/fingerprint.png",
+        f"{RESULTS}/annotation/peak_annotation.rds",
+        f"{RESULTS}/diffbind/diffbind_results.tsv",
+        f"{RESULTS}/multiqc/multiqc_report.html",
+
+
+rule fastqc:
+    input: lambda wc: config["fastq"][wc.sample]["R1"]
+    output: f"{RESULTS}/fastqc/{{sample}}_fastqc.html"
+    container: "docker://biocontainers/fastqc:v0.12.1_cv2"
+    shell: "fastqc {input} -o {RESULTS}/fastqc"
+
+
+rule trim:
+    input: lambda wc: config["fastq"][wc.sample]["R1"]
+    output: temp(f"{RESULTS}/trimmed/{{sample}}.fastq.gz")
+    threads: THREADS
+    container: "docker://biocontainers/fastp:v0.23.4_cv1"
+    shell: "fastp -i {input} -o {output} --thread {threads} -j /dev/null -h /dev/null"
+
+
+rule bowtie2_align:
+    input:
+        reads=f"{RESULTS}/trimmed/{{sample}}.fastq.gz",
+        index=GENOME_IDX,
+    output:
+        bam=temp(f"{RESULTS}/aligned/{{sample}}.raw.bam"),
+    log: f"{RESULTS}/logs/bowtie2/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/bowtie2:2.5.3--py310h8d7afc0_0"
+    shell:
+        """
+        bowtie2 -x {input.index} -U {input.reads} \
+            --very-sensitive -p {threads} 2>{log} | \
+        samtools sort -@ {threads} -o {output.bam}
+        samtools index {output.bam}
+        """
+
+
+rule filter_bam:
+    input: f"{RESULTS}/aligned/{{sample}}.raw.bam"
+    output: f"{RESULTS}/aligned/{{sample}}.filtered.bam"
+    log: f"{RESULTS}/logs/filter/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/samtools:1.19--h50ea8bc_0"
+    run:
+        bl = f"-L {BLACKLIST}" if BLACKLIST else ""
+        shell(f"""
+        samtools view -b -q 30 -F 1804 {bl} {input} | \
+        samtools sort -@ {threads} -o {output} 2>{log}
+        samtools index {output}
+        """)
+
+
+rule mark_duplicates:
+    input: f"{RESULTS}/aligned/{{sample}}.filtered.bam"
+    output:
+        bam=f"{RESULTS}/aligned/{{sample}}.dedup.bam",
+        metrics=f"{RESULTS}/aligned/{{sample}}.dup_metrics.txt",
+    log: f"{RESULTS}/logs/dedup/{{sample}}.log"
+    container: "docker://broadinstitute/picard:3.1.1"
+    shell:
+        """
+        picard MarkDuplicates I={input} O={output.bam} M={output.metrics} \
+            REMOVE_DUPLICATES=true 2>{log}
+        samtools index {output.bam}
+        """
+
+
+rule macs3_peaks:
+    input:
+        treatment=f"{RESULTS}/aligned/{{sample}}.dedup.bam",
+        control=lambda wc: f"{RESULTS}/aligned/{config['samples'][wc.sample]['input']}.dedup.bam"
+            if config.get("samples", {}).get(wc.sample, {}).get("input") else [],
+    output:
+        peaks=f"{RESULTS}/peaks/{{sample}}_peaks.{PEAK_TYPE}Peak",
+        summits=f"{RESULTS}/peaks/{{sample}}_summits.bed",
+    log: f"{RESULTS}/logs/macs3/{{sample}}.log"
+    container: "docker://quay.io/biocontainers/macs3:3.0.1--py310h4b81fae_0"
+    run:
+        control_flag = f"-c {input.control}" if input.control else ""
+        broad_flag = "--broad" if PEAK_TYPE == "broad" else ""
+        shell(f"""
+        macs3 callpeak -t {input.treatment} {control_flag} \
+            -f BAM -g hs {broad_flag} \
+            --outdir {RESULTS}/peaks \
+            --name {wildcards.sample} \
+            --keep-dup all -q 0.05 2>{log}
+        """)
+
+
+rule bamcoverage_bigwig:
+    input: f"{RESULTS}/aligned/{{sample}}.dedup.bam"
+    output: f"{RESULTS}/bigwig/{{sample}}.bw"
+    log: f"{RESULTS}/logs/bigwig/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/deeptools:3.5.4--pyhdfd78af_1"
+    shell:
+        """
+        bamCoverage -b {input} -o {output} \
+            --normalizeUsing RPKM \
+            --binSize 10 --smoothLength 30 \
+            -p {threads} 2>{log}
+        """
+
+
+rule deeptools_qc:
+    input: expand(f"{RESULTS}/aligned/{{sample}}.dedup.bam", sample=SAMPLES)
+    output: f"{RESULTS}/qc/fingerprint.png"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/deeptools:3.5.4--pyhdfd78af_1"
+    shell:
+        """
+        plotFingerprint -b {input} \
+            -plot {output} \
+            --labels {" ".join(SAMPLES)} \
+            -p {threads}
+        """
+
+
+rule chipseeker_annotation:
+    input:
+        peaks=expand(f"{RESULTS}/peaks/{{sample}}_peaks.{PEAK_TYPE}Peak", sample=SAMPLES),
+        gtf=GTF,
+    output: f"{RESULTS}/annotation/peak_annotation.rds"
+    container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+    script: "scripts/chipseeker_annotation.R"
+
+
+rule diffbind:
+    input:
+        bams=expand(f"{RESULTS}/aligned/{{sample}}.dedup.bam", sample=SAMPLES),
+        peaks=expand(f"{RESULTS}/peaks/{{sample}}_peaks.{PEAK_TYPE}Peak", sample=SAMPLES),
+    output: f"{RESULTS}/diffbind/diffbind_results.tsv"
+    container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+    script: "scripts/diffbind.R"
+
+
+rule multiqc:
+    input: expand(f"{RESULTS}/fastqc/{{sample}}_fastqc.html", sample=SAMPLES)
+    output: f"{RESULTS}/multiqc/multiqc_report.html"
+    container: "docker://quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0"
+    shell: "multiqc {RESULTS} -o {RESULTS}/multiqc --force"

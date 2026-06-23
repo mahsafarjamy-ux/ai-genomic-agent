@@ -1,0 +1,131 @@
+# DNA Methylation Pipeline (WGBS / RRBS)
+# Bismark alignment → MethylDackel extraction → DSS DMR analysis
+
+configfile: "config.yaml"
+
+SAMPLES     = config["samples"]
+GENOME      = config["genome_fasta"]
+BISMARK_IDX = config["bismark_index"]
+RESULTS     = config.get("results_dir", "results")
+THREADS     = config.get("threads", 16)
+MEMORY      = config.get("memory_gb", 64)
+MODE        = config.get("mode", "WGBS")   # WGBS or RRBS
+CASE_SAMPLES   = config.get("case_samples", [])
+CONTROL_SAMPLES = config.get("control_samples", [])
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/fastqc/{{sample}}_R1_fastqc.html", sample=SAMPLES),
+        expand(f"{RESULTS}/aligned/{{sample}}.bismark.bam", sample=SAMPLES),
+        expand(f"{RESULTS}/methylation/{{sample}}.bedGraph.gz", sample=SAMPLES),
+        f"{RESULTS}/dmr/dmr_results.tsv",
+        f"{RESULTS}/multiqc/multiqc_report.html",
+
+
+rule fastqc:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output:
+        html=f"{RESULTS}/fastqc/{{sample}}_R1_fastqc.html",
+    log: f"{RESULTS}/logs/fastqc/{{sample}}.log"
+    threads: 4
+    container: "docker://biocontainers/fastqc:v0.12.1_cv2"
+    shell: "fastqc {input.r1} {input.r2} -o {RESULTS}/fastqc -t {threads} 2>{log}"
+
+
+rule trim_bisulfite:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output:
+        r1=temp(f"{RESULTS}/trimmed/{{sample}}_R1_trimmed.fastq.gz"),
+        r2=temp(f"{RESULTS}/trimmed/{{sample}}_R2_trimmed.fastq.gz"),
+    log: f"{RESULTS}/logs/trim/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/trim-galore:0.6.10--hdfd78af_0"
+    run:
+        rrbs_flag = "--rrbs" if MODE == "RRBS" else ""
+        shell(f"""
+        trim_galore {rrbs_flag} --paired --cores {threads} \
+            --output_dir {RESULTS}/trimmed \
+            {input.r1} {input.r2} 2>{log}
+        """)
+
+
+rule bismark_align:
+    input:
+        r1=f"{RESULTS}/trimmed/{{sample}}_R1_trimmed.fastq.gz",
+        r2=f"{RESULTS}/trimmed/{{sample}}_R2_trimmed.fastq.gz",
+        index=BISMARK_IDX,
+    output:
+        bam=f"{RESULTS}/aligned/{{sample}}.bismark.bam",
+        report=f"{RESULTS}/aligned/{{sample}}_bismark_bt2_PE_report.txt",
+    log: f"{RESULTS}/logs/bismark/{{sample}}.log"
+    threads: THREADS
+    resources: mem_mb=MEMORY * 1024
+    container: "docker://quay.io/biocontainers/bismark:0.24.2--hdfd78af_0"
+    shell:
+        """
+        bismark --genome {input.index} \
+            -1 {input.r1} -2 {input.r2} \
+            --parallel {threads} \
+            --output_dir {RESULTS}/aligned \
+            --basename {wildcards.sample} 2>{log}
+        """
+
+
+rule deduplicate:
+    input: f"{RESULTS}/aligned/{{sample}}.bismark.bam"
+    output: f"{RESULTS}/dedup/{{sample}}.dedup.bam"
+    log: f"{RESULTS}/logs/dedup/{{sample}}.log"
+    container: "docker://quay.io/biocontainers/bismark:0.24.2--hdfd78af_0"
+    run:
+        if MODE == "RRBS":
+            shell("cp {input} {output}")  # Don't dedup RRBS
+        else:
+            shell("deduplicate_bismark --paired --output_dir {RESULTS}/dedup {input} 2>{log}")
+
+
+rule methylation_extraction:
+    input: f"{RESULTS}/dedup/{{sample}}.dedup.bam"
+    output:
+        bedgraph=f"{RESULTS}/methylation/{{sample}}.bedGraph.gz",
+        bismark_cov=f"{RESULTS}/methylation/{{sample}}.bismark.cov.gz",
+        cx_report=f"{RESULTS}/methylation/{{sample}}.CX_report.txt.gz",
+    log: f"{RESULTS}/logs/extract/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/bismark:0.24.2--hdfd78af_0"
+    shell:
+        """
+        bismark_methylation_extractor \
+            --paired-end --comprehensive --CX_context \
+            --cytosine_report --genome_folder {BISMARK_IDX} \
+            --gzip --parallel {threads} \
+            --output {RESULTS}/methylation \
+            {input} 2>{log}
+        """
+
+
+rule dss_dmr:
+    input:
+        cases=expand(f"{RESULTS}/methylation/{{sample}}.bismark.cov.gz", sample=CASE_SAMPLES),
+        controls=expand(f"{RESULTS}/methylation/{{sample}}.bismark.cov.gz", sample=CONTROL_SAMPLES),
+    output:
+        dmr=f"{RESULTS}/dmr/dmr_results.tsv",
+        dml=f"{RESULTS}/dmr/dml_results.tsv",
+        plot=f"{RESULTS}/dmr/dmr_volcano.pdf",
+    log: f"{RESULTS}/logs/dss_dmr.log"
+    container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+    script: "scripts/dss_dmr.R"
+
+
+rule multiqc:
+    input:
+        expand(f"{RESULTS}/fastqc/{{sample}}_R1_fastqc.html", sample=SAMPLES),
+        expand(f"{RESULTS}/aligned/{{sample}}_bismark_bt2_PE_report.txt", sample=SAMPLES),
+    output: f"{RESULTS}/multiqc/multiqc_report.html"
+    log: f"{RESULTS}/logs/multiqc.log"
+    container: "docker://quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0"
+    shell: "multiqc {RESULTS} -o {RESULTS}/multiqc --force 2>{log}"

@@ -1,0 +1,273 @@
+# Microbiome Pipeline: 16S amplicon OR shotgun metagenomics
+# 16S: QIIME2 + DADA2 | Shotgun: Kraken2 + MetaPhlAn4 + HUMAnN3 + MEGAHIT MAGs
+
+configfile: "config.yaml"
+
+SAMPLES      = config["samples"]
+MODE         = config.get("mode", "shotgun")     # "16S" or "shotgun"
+RESULTS      = config.get("results_dir", "results")
+THREADS      = config.get("threads", 16)
+MEMORY       = config.get("memory_gb", 128)
+KRAKEN_DB    = config.get("kraken2_db", "")
+METAPHLAN_DB = config.get("metaphlan_db", "")
+HUMANN_DB    = config.get("humann_db", "")
+QIIME2_CLASSIFIER = config.get("qiime2_classifier", "")   # 16S only
+PRIMER_F     = config.get("primer_forward", "GTGYCAGCMGCCGCGGTAA")   # 515F
+PRIMER_R     = config.get("primer_reverse", "GGACTACNVGGGTWTCTAAT")  # 806R
+
+
+rule all:
+    input:
+        (expand(f"{RESULTS}/kraken2/{{sample}}_report.txt", sample=SAMPLES) +
+         [f"{RESULTS}/metaphlan/merged_abundance.tsv",
+          f"{RESULTS}/humann/merged_pathway_abundance.tsv",
+          f"{RESULTS}/mags/checkm_quality.tsv",
+          f"{RESULTS}/diversity/ancombc2_results.tsv"]
+         if MODE == "shotgun" else
+         [f"{RESULTS}/qiime2/dada2_table.qza",
+          f"{RESULTS}/qiime2/alpha_diversity/",
+          f"{RESULTS}/qiime2/differential_abundance.tsv"]),
+
+
+# ─── SHOTGUN ────────────────────────────────────────────────────────────────
+
+if MODE == "shotgun":
+
+    rule fastp_shotgun:
+        input:
+            r1=lambda wc: config["fastq"][wc.sample]["R1"],
+            r2=lambda wc: config["fastq"][wc.sample]["R2"],
+        output:
+            r1=temp(f"{RESULTS}/trimmed/{{sample}}_R1.fastq.gz"),
+            r2=temp(f"{RESULTS}/trimmed/{{sample}}_R2.fastq.gz"),
+        threads: THREADS
+        container: "docker://biocontainers/fastp:v0.23.4_cv1"
+        shell: "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --thread {threads} -j /dev/null -h /dev/null"
+
+    rule remove_host:
+        input:
+            r1=f"{RESULTS}/trimmed/{{sample}}_R1.fastq.gz",
+            r2=f"{RESULTS}/trimmed/{{sample}}_R2.fastq.gz",
+        output:
+            r1=f"{RESULTS}/host_removed/{{sample}}_R1.fastq.gz",
+            r2=f"{RESULTS}/host_removed/{{sample}}_R2.fastq.gz",
+        log: f"{RESULTS}/logs/host_remove/{{sample}}.log"
+        threads: THREADS
+        container: "docker://quay.io/biocontainers/bowtie2:2.5.3--py310h8d7afc0_0"
+        shell:
+            """
+            bowtie2 -x {config[human_index]} \
+                -1 {input.r1} -2 {input.r2} \
+                -p {threads} --very-fast \
+                --un-conc-gz {RESULTS}/host_removed/{wildcards.sample}_R%.fastq.gz \
+                -S /dev/null 2>{log}
+            """
+
+    rule kraken2:
+        input:
+            r1=f"{RESULTS}/host_removed/{{sample}}_R1.fastq.gz",
+            r2=f"{RESULTS}/host_removed/{{sample}}_R2.fastq.gz",
+        output:
+            report=f"{RESULTS}/kraken2/{{sample}}_report.txt",
+            output=f"{RESULTS}/kraken2/{{sample}}.kraken2",
+        log: f"{RESULTS}/logs/kraken2/{{sample}}.log"
+        threads: THREADS
+        resources: mem_mb=MEMORY * 1024
+        container: "docker://quay.io/biocontainers/kraken2:2.1.3--pl5321h077b44d_0"
+        shell:
+            """
+            kraken2 --db {KRAKEN_DB} \
+                --paired {input.r1} {input.r2} \
+                --threads {threads} \
+                --report {output.report} \
+                --gzip-compressed \
+                > {output.output} 2>{log}
+            """
+
+    rule bracken:
+        input: f"{RESULTS}/kraken2/{{sample}}_report.txt"
+        output: f"{RESULTS}/bracken/{{sample}}_species.bracken"
+        container: "docker://quay.io/biocontainers/bracken:2.9--h9f5acd7_0"
+        shell: "bracken -d {KRAKEN_DB} -i {input} -o {output} -r 150 -l S"
+
+    rule metaphlan4:
+        input:
+            r1=f"{RESULTS}/host_removed/{{sample}}_R1.fastq.gz",
+            r2=f"{RESULTS}/host_removed/{{sample}}_R2.fastq.gz",
+        output:
+            profile=f"{RESULTS}/metaphlan/{{sample}}_profile.tsv",
+            bowtie2=f"{RESULTS}/metaphlan/{{sample}}.bowtie2.bz2",
+        log: f"{RESULTS}/logs/metaphlan/{{sample}}.log"
+        threads: THREADS
+        container: "docker://quay.io/biocontainers/metaphlan:4.1.0--pyhca03a8a_0"
+        shell:
+            """
+            metaphlan {input.r1},{input.r2} \
+                --bowtie2db {METAPHLAN_DB} \
+                --input_type fastq \
+                --bowtie2out {output.bowtie2} \
+                -o {output.profile} \
+                -t rel_ab_w_read_stats \
+                --nproc {threads} 2>{log}
+            """
+
+    rule merge_metaphlan:
+        input: expand(f"{RESULTS}/metaphlan/{{sample}}_profile.tsv", sample=SAMPLES)
+        output: f"{RESULTS}/metaphlan/merged_abundance.tsv"
+        container: "docker://quay.io/biocontainers/metaphlan:4.1.0--pyhca03a8a_0"
+        shell: "merge_metaphlan_tables.py {input} -o {output}"
+
+    rule humann3:
+        input:
+            r1=f"{RESULTS}/host_removed/{{sample}}_R1.fastq.gz",
+            profile=f"{RESULTS}/metaphlan/{{sample}}_profile.tsv",
+        output:
+            pathways=f"{RESULTS}/humann/{{sample}}_pathabundance.tsv",
+        log: f"{RESULTS}/logs/humann/{{sample}}.log"
+        threads: THREADS
+        container: "docker://quay.io/biocontainers/humann:3.9--pyh7cba7a3_0"
+        shell:
+            """
+            humann --input {input.r1} \
+                --output {RESULTS}/humann/{wildcards.sample} \
+                --taxonomic-profile {input.profile} \
+                --threads {threads} \
+                --nucleotide-database {HUMANN_DB}/chocophlan \
+                --protein-database {HUMANN_DB}/uniref 2>{log}
+            """
+
+    rule merge_humann:
+        input: expand(f"{RESULTS}/humann/{{sample}}_pathabundance.tsv", sample=SAMPLES)
+        output: f"{RESULTS}/humann/merged_pathway_abundance.tsv"
+        container: "docker://quay.io/biocontainers/humann:3.9--pyh7cba7a3_0"
+        shell: "humann_join_tables -i {RESULTS}/humann -o {output} --file_name pathabundance"
+
+    rule megahit_assembly:
+        input:
+            r1=f"{RESULTS}/host_removed/{{sample}}_R1.fastq.gz",
+            r2=f"{RESULTS}/host_removed/{{sample}}_R2.fastq.gz",
+        output: directory(f"{RESULTS}/assembly/{{sample}}/")
+        log: f"{RESULTS}/logs/megahit/{{sample}}.log"
+        threads: THREADS
+        resources: mem_mb=MEMORY * 1024
+        container: "docker://quay.io/biocontainers/megahit:1.2.9--h43eeafb_4"
+        shell: "megahit -1 {input.r1} -2 {input.r2} -o {output} -t {threads} 2>{log}"
+
+    rule metabat2_binning:
+        input:
+            assembly=f"{RESULTS}/assembly/{{sample}}/",
+            bam=f"{RESULTS}/aligned/{{sample}}.bam",
+        output: directory(f"{RESULTS}/bins/{{sample}}/")
+        log: f"{RESULTS}/logs/metabat/{{sample}}.log"
+        container: "docker://quay.io/biocontainers/metabat2:2.15--h986a166_1"
+        shell:
+            """
+            jgi_summarize_bam_contig_depths --outputDepth {RESULTS}/bins/{wildcards.sample}_depth.txt {input.bam}
+            metabat2 -i {input.assembly}/final.contigs.fa \
+                -a {RESULTS}/bins/{wildcards.sample}_depth.txt \
+                -o {output}/{wildcards.sample}_bin -t {threads} 2>{log}
+            """
+
+    rule checkm2_quality:
+        input: expand(f"{RESULTS}/bins/{{sample}}/", sample=SAMPLES)
+        output: f"{RESULTS}/mags/checkm_quality.tsv"
+        threads: THREADS
+        container: "docker://quay.io/biocontainers/checkm2:1.0.2--pyh7cba7a3_0"
+        shell:
+            """
+            checkm2 predict --input {RESULTS}/bins/ \
+                --output-directory {RESULTS}/mags/ \
+                --threads {threads}
+            cp {RESULTS}/mags/quality_report.tsv {output}
+            """
+
+    rule ancombc2_diversity:
+        input: f"{RESULTS}/metaphlan/merged_abundance.tsv"
+        output: f"{RESULTS}/diversity/ancombc2_results.tsv"
+        container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+        script: "scripts/ancombc2.R"
+
+
+# ─── 16S AMPLICON ────────────────────────────────────────────────────────────
+
+if MODE == "16S":
+
+    rule qiime2_import:
+        output: f"{RESULTS}/qiime2/reads.qza"
+        shell:
+            """
+            qiime tools import \
+                --type 'SampleData[PairedEndSequencesWithQuality]' \
+                --input-path {config[manifest_tsv]} \
+                --input-format PairedEndFastqManifestPhred33V2 \
+                --output-path {output}
+            """
+
+    rule cutadapt_primers:
+        input: f"{RESULTS}/qiime2/reads.qza"
+        output: f"{RESULTS}/qiime2/trimmed_reads.qza"
+        container: "docker://quay.io/qiime2/amplicon:2024.5"
+        shell:
+            f"""
+            qiime cutadapt trim-paired \
+                --i-demultiplexed-sequences {{input}} \
+                --p-front-f {PRIMER_F} --p-front-r {PRIMER_R} \
+                --p-discard-untrimmed \
+                --o-trimmed-sequences {{output}}
+            """
+
+    rule dada2_denoise:
+        input: f"{RESULTS}/qiime2/trimmed_reads.qza"
+        output:
+            table=f"{RESULTS}/qiime2/dada2_table.qza",
+            seqs=f"{RESULTS}/qiime2/dada2_seqs.qza",
+            stats=f"{RESULTS}/qiime2/dada2_stats.qza",
+        container: "docker://quay.io/qiime2/amplicon:2024.5"
+        threads: THREADS
+        shell:
+            """
+            qiime dada2 denoise-paired \
+                --i-demultiplexed-seqs {input} \
+                --p-trim-left-f 0 --p-trim-left-r 0 \
+                --p-trunc-len-f 250 --p-trunc-len-r 200 \
+                --p-n-threads {threads} \
+                --o-table {output.table} \
+                --o-representative-sequences {output.seqs} \
+                --o-denoising-stats {output.stats}
+            """
+
+    rule qiime2_taxonomy:
+        input:
+            seqs=f"{RESULTS}/qiime2/dada2_seqs.qza",
+            classifier=QIIME2_CLASSIFIER,
+        output: f"{RESULTS}/qiime2/taxonomy.qza"
+        threads: THREADS
+        container: "docker://quay.io/qiime2/amplicon:2024.5"
+        shell:
+            """
+            qiime feature-classifier classify-sklearn \
+                --i-classifier {input.classifier} \
+                --i-reads {input.seqs} \
+                --p-n-jobs {threads} \
+                --o-classification {output}
+            """
+
+    rule qiime2_diversity:
+        input:
+            table=f"{RESULTS}/qiime2/dada2_table.qza",
+        output: directory(f"{RESULTS}/qiime2/alpha_diversity/")
+        container: "docker://quay.io/qiime2/amplicon:2024.5"
+        shell:
+            """
+            qiime diversity core-metrics-phylogenetic \
+                --i-table {input.table} \
+                --p-sampling-depth {config[rarefaction_depth]} \
+                --m-metadata-file {config[metadata_tsv]} \
+                --output-dir {output}
+            """
+
+    rule ancombc2_16s:
+        input: f"{RESULTS}/qiime2/dada2_table.qza"
+        output: f"{RESULTS}/qiime2/differential_abundance.tsv"
+        container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+        script: "scripts/ancombc2_16s.R"

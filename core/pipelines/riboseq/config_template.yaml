@@ -1,0 +1,30 @@
+# Ribo-seq pipeline configuration template
+# Copy to config.yaml and fill in your paths.
+
+samples:
+  - sample1
+  - sample2
+
+data_dir: "/path/to/your/fastq/files"
+results_dir: "/path/to/results"
+
+# Reference genome
+genome_fasta: "/path/to/genome.fa"
+star_index:   "/path/to/STAR_index"
+annotation_gtf: "/path/to/annotation.gtf"
+
+# Optional: bowtie2 index of rRNA sequences for depletion
+rrna_bowtie2_index: "/path/to/rrna_bowtie2"
+
+# Fragment length filtering (typical RPF window)
+fragment_len_min: 25
+fragment_len_max: 35
+
+# Compute resources
+threads: 16
+ram_gb:  64
+
+# Translation efficiency (TE) calculation
+# Set has_rnaseq_pairs: true and provide the FPKM matrix from matched RNA-seq
+has_rnaseq_pairs: false
+rnaseq_fpkm_matrix: ""   # path to TSV with columns: Geneid, sample1, sample2, ...
