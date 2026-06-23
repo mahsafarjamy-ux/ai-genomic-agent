@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
 
@@ -133,7 +133,40 @@ export default function PersonalPage() {
   const [results, setResults]       = useState<AnalysisResult | null>(null);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef   = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+    resize();
+    window.addEventListener("resize", resize);
+    const bases = ["A","C","G","T"];
+    const baseColors: Record<string,string> = { A:"#e879f9", C:"#c084fc", G:"#a855f7", T:"#d946ef" };
+    const fontSize = 13;
+    let drops: number[] = Array(Math.floor(canvas.width / fontSize)).fill(1);
+    let raf: number;
+    const draw = () => {
+      const cols = Math.floor(canvas.width / fontSize);
+      if (drops.length !== cols) drops = Array(cols).fill(1);
+      ctx.fillStyle = "rgba(255,245,252,0.07)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < drops.length; i++) {
+        const base = bases[Math.floor(Math.random() * 4)];
+        ctx.fillStyle = baseColors[base];
+        ctx.font = `${fontSize}px monospace`;
+        ctx.fillText(base, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+  }, []);
 
   const [showPassport, setShowPassport]   = useState(false);
   const [passportName, setPassportName]   = useState("");
@@ -197,13 +230,8 @@ export default function PersonalPage() {
         padding: "1rem 2rem",
         display: "flex", alignItems: "center", gap: "0.6rem",
       }}>
-        <a href="/gateway" style={{ display: "flex", alignItems: "center", gap: "0.6rem", textDecoration: "none" }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: "50%",
-            background: "linear-gradient(135deg, #f05808, #e44c81)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontWeight: 800, fontSize: 14,
-          }}>G</div>
+        <a href="/gateway" style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
+          <img src="/logo.svg" alt="" style={{ width: 44, height: 30, display: "block", filter: "drop-shadow(0 0 5px rgba(240,88,8,0.4))" }} />
           <span style={{ fontWeight: 700, fontSize: 14, color: "#1c1a16" }}>Genomics Platform</span>
         </a>
         <span style={{ color: "#d0d0d0", marginLeft: 4 }}>/</span>
@@ -447,21 +475,36 @@ export default function PersonalPage() {
         <>
           {/* ── Hero: title + feature bubbles only ── */}
           <section style={{
-            background: "linear-gradient(160deg, #fff 0%, #fff5f8 50%, #fff8f3 100%)",
-            borderBottom: "1px solid #f0f0f0",
+            position: "relative",
+            background: "linear-gradient(160deg, #1a0828 0%, #2d0f42 40%, #1e0535 100%)",
+            borderBottom: "1px solid rgba(232,121,249,0.15)",
             padding: "4rem 1.5rem 4.5rem",
             textAlign: "center",
+            overflow: "hidden",
           }}>
+            {/* Purple/pink ACGT matrix */}
+            <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.25, pointerEvents: "none" }} />
+
+            {/* Floating logo — no box, screen blend makes dark bg vanish */}
+            <div style={{ position: "absolute", top: -40, right: 80, width: 260, height: 260, pointerEvents: "none", zIndex: 1, opacity: 0.3 }}>
+              <img src="/logo-original.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", mixBlendMode: "screen" }} />
+            </div>
+            <div style={{ position: "absolute", bottom: -50, left: 40, width: 200, height: 200, pointerEvents: "none", zIndex: 1, opacity: 0.18 }}>
+              <img src="/logo-original.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", mixBlendMode: "screen" }} />
+            </div>
+
+            {/* Badge */}
+            <div style={{ position: "relative", zIndex: 2 }}>
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 8,
-              background: "#fff", border: "1px solid #ffc4d8",
+              background: "rgba(232,121,249,0.12)", border: "1px solid rgba(232,121,249,0.35)",
               borderRadius: 20, padding: "6px 14px",
-              fontSize: 12, color: "#e44c81", fontWeight: 600, marginBottom: "1.75rem",
+              fontSize: 12, color: "#e879f9", fontWeight: 600, marginBottom: "1.75rem",
             }}>
               🧬 Personalized health from your actual DNA
             </div>
 
-            <h1 style={{
+            <h1 style={{ color: "#fff",
               fontSize: "clamp(2rem, 5vw, 3.25rem)",
               fontWeight: 900,
               letterSpacing: "-0.04em",
@@ -470,10 +513,10 @@ export default function PersonalPage() {
               margin: "0 auto 2.5rem",
             }}>
               Your DNA.<br />
-              <span style={{ color: "#e44c81" }}>Your Health Blueprint.</span>
+              <span style={{ color: "#e879f9" }}>Your Health Blueprint.</span>
             </h1>
 
-            {/* Feature bubbles */}
+            {/* Feature bubbles — adapted for dark bg */}
             <div style={{
               display: "flex", flexWrap: "wrap", justifyContent: "center",
               gap: 8, maxWidth: 760, margin: "0 auto 3rem",
@@ -482,9 +525,10 @@ export default function PersonalPage() {
                 <div key={p.text} style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   padding: "8px 16px", borderRadius: 30,
-                  background: p.bg, border: `1px solid ${p.color}33`,
+                  background: "rgba(255,255,255,0.07)", border: `1px solid ${p.color}55`,
                   fontSize: 13, color: p.color, fontWeight: 600,
                   whiteSpace: "nowrap",
+                  backdropFilter: "blur(4px)",
                 }}>
                   <span>{p.emoji}</span>
                   <span>{p.text}</span>
@@ -499,7 +543,8 @@ export default function PersonalPage() {
                 onClick={e => { e.preventDefault(); document.getElementById("download-section")?.scrollIntoView({ behavior: "smooth" }); }}
                 style={{
                   padding: "14px 28px", borderRadius: 14,
-                  background: "#1c1a16", color: "#fff",
+                  background: "rgba(255,255,255,0.1)", color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.2)",
                   fontWeight: 700, fontSize: 15, textDecoration: "none",
                   display: "inline-flex", alignItems: "center", gap: 8,
                 }}>
@@ -509,13 +554,14 @@ export default function PersonalPage() {
                 onClick={() => document.getElementById("analyze-section")?.scrollIntoView({ behavior: "smooth" })}
                 style={{
                   padding: "14px 28px", borderRadius: 14, border: "none",
-                  background: "linear-gradient(135deg, #e44c81, #f05808)",
+                  background: "linear-gradient(135deg, #e879f9, #c084fc)",
                   color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer",
-                  boxShadow: "0 4px 16px rgba(228,76,129,0.25)",
+                  boxShadow: "0 4px 20px rgba(232,121,249,0.4)",
                 }}>
                 Analyze My DNA →
               </button>
             </div>
+            </div>{/* close zIndex-2 div */}
           </section>
 
           {/* ── Analyze section: auth gate + upload ── */}
