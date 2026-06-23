@@ -1,0 +1,98 @@
+# Multi-Omics Integration Pipeline
+# MOFA+ (factor analysis) + DIABLO (supervised) + network analysis
+# Accepts any combination of: RNA-seq, ATAC-seq, methylation, proteomics, microbiome
+
+configfile: "config.yaml"
+
+RESULTS        = config.get("results_dir", "results")
+THREADS        = config.get("threads", 16)
+MODALITIES     = config.get("modalities", [])          # list of: rnaseq, atacseq, methylation, proteomics, microbiome
+SAMPLE_GROUPS  = config.get("sample_groups", {})        # {group_name: [sample_ids]}
+N_FACTORS      = config.get("mofa_n_factors", 15)
+CONVERGENCE_TOL= config.get("mofa_convergence_tol", 0.01)
+RUN_MOFA       = config.get("run_mofa", True)
+RUN_DIABLO     = config.get("run_diablo", True)
+RUN_WGCNA      = config.get("run_wgcna", False)
+
+
+rule all:
+    input:
+        *([f"{RESULTS}/mofa/mofa_model.hdf5",
+           f"{RESULTS}/mofa/mofa_variance_explained.pdf",
+           f"{RESULTS}/mofa/mofa_factor_plots.pdf"] if RUN_MOFA else []),
+        *([f"{RESULTS}/diablo/diablo_model.rds",
+           f"{RESULTS}/diablo/diablo_performance.pdf"] if RUN_DIABLO else []),
+        f"{RESULTS}/integration_summary.json",
+
+
+rule prepare_mofa_input:
+    input:
+        rna=config.get("rna_matrix", ""),
+        atac=config.get("atac_matrix", ""),
+        methylation=config.get("methylation_matrix", ""),
+        proteomics=config.get("proteomics_matrix", ""),
+        microbiome=config.get("microbiome_matrix", ""),
+        metadata=config.get("sample_metadata", ""),
+    output:
+        mofa_input=f"{RESULTS}/mofa/mofa_input.rds",
+        data_summary=f"{RESULTS}/mofa/data_summary.tsv",
+    container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+    script: "scripts/prepare_mofa_input.R"
+
+
+if RUN_MOFA:
+    rule run_mofa:
+        input: f"{RESULTS}/mofa/mofa_input.rds"
+        output:
+            model=f"{RESULTS}/mofa/mofa_model.hdf5",
+            variance=f"{RESULTS}/mofa/mofa_variance_explained.pdf",
+            factors=f"{RESULTS}/mofa/mofa_factor_plots.pdf",
+            enrichment=f"{RESULTS}/mofa/mofa_factor_enrichment.tsv",
+        log: f"{RESULTS}/logs/mofa.log"
+        container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+        script: "scripts/run_mofa.R"
+
+
+if RUN_DIABLO:
+    rule run_diablo:
+        input:
+            rna=config.get("rna_matrix", ""),
+            metadata=config.get("sample_metadata", ""),
+        output:
+            model=f"{RESULTS}/diablo/diablo_model.rds",
+            performance=f"{RESULTS}/diablo/diablo_performance.pdf",
+            selected_features=f"{RESULTS}/diablo/selected_features.tsv",
+        log: f"{RESULTS}/logs/diablo.log"
+        container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+        script: "scripts/run_diablo.R"
+
+
+if RUN_WGCNA:
+    rule wgcna_networks:
+        input: config.get("rna_matrix", "")
+        output:
+            modules=f"{RESULTS}/wgcna/modules.tsv",
+            hub_genes=f"{RESULTS}/wgcna/hub_genes.tsv",
+            network_plot=f"{RESULTS}/wgcna/dendrogram.pdf",
+        container: "docker://bioconductor/bioconductor_docker:RELEASE_3_19"
+        script: "scripts/wgcna.R"
+
+
+rule integration_summary:
+    input:
+        mofa_model=f"{RESULTS}/mofa/mofa_model.hdf5" if RUN_MOFA else [],
+        diablo_model=f"{RESULTS}/diablo/diablo_model.rds" if RUN_DIABLO else [],
+    output: f"{RESULTS}/integration_summary.json"
+    run:
+        import json
+        summary = {
+            "modalities_integrated": MODALITIES,
+            "n_factors": N_FACTORS,
+            "sample_groups": SAMPLE_GROUPS,
+            "outputs": {
+                "mofa_model": str(f"{RESULTS}/mofa/mofa_model.hdf5") if RUN_MOFA else None,
+                "diablo_model": str(f"{RESULTS}/diablo/diablo_model.rds") if RUN_DIABLO else None,
+            }
+        }
+        import json
+        open(output[0], "w").write(json.dumps(summary, indent=2))

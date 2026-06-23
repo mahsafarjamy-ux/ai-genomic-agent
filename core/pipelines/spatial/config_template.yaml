@@ -1,0 +1,40 @@
+# Spatial Transcriptomics pipeline configuration template
+# Copy to config.yaml and fill in your paths.
+
+samples:
+  - patient1_section1
+  - patient1_section2
+
+data_dir: "/path/to/your/data"
+results_dir: "/path/to/results"
+
+# Platform: visium | visiumhd | slideseq | merfish | stereoseq
+platform: "visium"
+
+# Reference
+genome_fasta:   "/path/to/genome.fa"
+star_index:     "/path/to/SpaceRanger_genome"   # Space Ranger compatible index
+annotation_gtf: "/path/to/annotation.gtf"
+
+species: "human"   # human | mouse
+
+# 10x Visium slide IDs and capture areas (per sample)
+slide_ids:
+  patient1_section1: "V10J14-087"
+  patient1_section2: "V10J14-087"
+capture_areas:
+  patient1_section1: "A1"
+  patient1_section2: "B1"
+
+# H&E images per sample (required for Space Ranger)
+he_images:
+  patient1_section1: "/path/to/patient1_A1_HE.jpg"
+  patient1_section2: "/path/to/patient1_B1_HE.jpg"
+
+# Cell-type deconvolution (optional)
+# Provide a reference scRNA-seq h5ad with obs['celltype'] labels
+scrna_reference: ""   # leave empty to skip cell2location
+
+# Compute resources
+threads: 16
+ram_gb:  64

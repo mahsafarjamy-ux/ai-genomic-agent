@@ -1,0 +1,292 @@
+{
+  "version": "1.0.0",
+  "description": "Public genomic datasets searchable for control populations, reference cohorts, and benchmarking",
+  "databases": {
+    "geo": {
+      "name": "NCBI GEO",
+      "full_name": "Gene Expression Omnibus",
+      "description": "Largest repository for functional genomics data (RNA-seq, ChIP-seq, methylation, scRNA-seq, etc.)",
+      "url": "https://www.ncbi.nlm.nih.gov/geo/",
+      "api_base": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/",
+      "search_api": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gds&term={query}&retmax={n}&retmode=json",
+      "fetch_api": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gds&id={id}&retmode=json",
+      "analysis_types": ["rnaseq", "scrnaseq", "chipseq", "atacseq", "methylation", "riboseq", "microbiome", "proteomics"],
+      "free": true,
+      "registration_required": false,
+      "notes": "Use GSE accession to download data via GEOquery R package or GEO2R",
+      "download_tool": "GEOquery",
+      "download_tool_version": "2.70.0",
+      "key_datasets": {
+        "normal_tissues_bulk": {"accession": "GSE120795", "description": "GTEx multi-tissue RNA-seq"},
+        "normal_blood_scrna": {"accession": "GSE132044", "description": "Human PBMC scRNA-seq atlas"},
+        "normal_methylation": {"accession": "GSE40279", "description": "Blood methylation across ages (656 samples)"},
+        "cancer_rnaseq": {"accession": "TCGA via GEO", "description": "See TCGA entry"}
+      }
+    },
+    "sra": {
+      "name": "NCBI SRA",
+      "full_name": "Sequence Read Archive",
+      "description": "Raw sequencing data (FASTQ/BAM) for all NGS data types",
+      "url": "https://www.ncbi.nlm.nih.gov/sra/",
+      "api_base": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/",
+      "search_api": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=sra&term={query}&retmax={n}&retmode=json",
+      "download_tool": "sra-tools (fasterq-dump)",
+      "download_tool_version": "3.1.1",
+      "free": true,
+      "registration_required": false,
+      "notes": "Use fasterq-dump for FASTQ download. AWS Open Data mirrors for faster access.",
+      "aws_mirror": "s3://sra-pub-run-odp/",
+      "analysis_types": ["all"]
+    },
+    "tcga": {
+      "name": "TCGA",
+      "full_name": "The Cancer Genome Atlas",
+      "description": "Multi-omics cancer data: WGS, WES, RNA-seq, methylation, miRNA, protein, clinical",
+      "url": "https://portal.gdc.cancer.gov/",
+      "api_base": "https://api.gdc.cancer.gov/",
+      "search_api": "https://api.gdc.cancer.gov/cases?filters={filters}&fields={fields}&size={n}",
+      "download_tool": "gdc-client",
+      "free": true,
+      "registration_required": true,
+      "notes": "Open-access data (somatic variants, RNA-seq) free. Controlled access (germline, raw reads) requires dbGaP approval.",
+      "cancer_types": [
+        "BRCA", "LUAD", "LUSC", "COAD", "READ", "PRAD", "HNSC", "THCA",
+        "BLCA", "STAD", "SKCM", "GBM", "LGG", "OV", "KIRC", "KIRP",
+        "UCEC", "LIHC", "CESC", "SARC", "PCPG", "PAAD", "TGCT", "THYM",
+        "ACC", "UVM", "DLBC", "UCS", "CHOL", "MESO", "KICH", "LAML"
+      ],
+      "data_types": ["RNA-seq", "WGS", "WES", "methylation_450k", "miRNA", "RPPA_protein", "clinical", "copy_number"],
+      "analysis_types": ["rnaseq", "wgs", "wes", "methylation"],
+      "best_for": "Cancer vs normal comparisons; all cancer types"
+    },
+    "gtex": {
+      "name": "GTEx",
+      "full_name": "Genotype-Tissue Expression Project",
+      "description": "Normal tissue gene expression + eQTLs across 54 tissues from non-diseased donors",
+      "url": "https://gtexportal.org/",
+      "api_base": "https://gtexportal.org/api/v2/",
+      "search_api": "https://gtexportal.org/api/v2/expression/geneExpression?gencodeId={gene_id}&tissueSiteDetailId={tissue}",
+      "free": true,
+      "registration_required": false,
+      "version": "V10",
+      "n_donors": 979,
+      "n_tissues": 54,
+      "data_types": ["RNA-seq", "WGS", "splicing_QTLs", "methylation"],
+      "analysis_types": ["rnaseq", "wgs"],
+      "best_for": "Normal expression reference for any tissue; eQTL analysis",
+      "tissues": [
+        "whole_blood", "brain_cortex", "brain_hippocampus", "liver", "kidney_cortex",
+        "lung", "heart_left_ventricle", "muscle_skeletal", "adipose_subcutaneous",
+        "colon_sigmoid", "breast_mammary", "ovary", "prostate", "testis",
+        "thyroid", "skin_sun_exposed", "esophagus_mucosa"
+      ]
+    },
+    "encode": {
+      "name": "ENCODE",
+      "full_name": "Encyclopedia of DNA Elements",
+      "description": "ChIP-seq, ATAC-seq, RNA-seq, RRBS from hundreds of cell lines and tissues",
+      "url": "https://www.encodeproject.org/",
+      "api_base": "https://www.encodeproject.org/",
+      "search_api": "https://www.encodeproject.org/search/?type={experiment_type}&biosample_ontology.term_name={tissue}&status=released&format=json",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["chipseq", "atacseq", "rnaseq", "methylation"],
+      "best_for": "TF binding, histone marks, chromatin accessibility in cell lines",
+      "data_types": ["ChIP-seq", "ATAC-seq", "RNA-seq", "RRBS", "HiC", "eCLIP"]
+    },
+    "hca": {
+      "name": "HCA",
+      "full_name": "Human Cell Atlas",
+      "description": "Single-cell transcriptomics atlas of all human cell types",
+      "url": "https://www.humancellatlas.org/",
+      "api_base": "https://service.azul.data.humancellatlas.org/",
+      "search_api": "https://service.azul.data.humancellatlas.org/index/projects?filters={filters}&size={n}",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["scrnaseq"],
+      "best_for": "Normal single-cell reference for any organ/tissue; cell type annotation reference",
+      "key_atlases": {
+        "lung": "HCA Lung atlas — 2.4M cells across health and disease",
+        "gut": "HCA Gut atlas — epithelial, immune, stromal across GI tract",
+        "immune": "HCA Immune atlas — all blood + lymphoid cell types",
+        "brain": "HCA Brain atlas — 3M+ cells from all brain regions",
+        "heart": "HCA Heart atlas — all cardiac cell types",
+        "kidney": "HCA Kidney atlas — nephron cell types"
+      }
+    },
+    "cellxgene": {
+      "name": "CellxGene Census",
+      "full_name": "CZ CELLxGENE Discover",
+      "description": "Unified, queryable collection of 60M+ single cells across all organs",
+      "url": "https://cellxgene.cziscience.com/",
+      "api_base": "https://api.cellxgene.cziscience.com/",
+      "python_client": "cellxgene-census",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["scrnaseq"],
+      "best_for": "Largest integrated scRNA-seq reference; query by tissue + disease + organism",
+      "n_cells": "60M+",
+      "notes": "Query directly in Python: census = cellxgene_census.open_soma(); no download needed"
+    },
+    "gnomad": {
+      "name": "gnomAD",
+      "full_name": "Genome Aggregation Database",
+      "description": "Population allele frequencies: 730,947 exomes + 76,215 genomes from diverse populations",
+      "url": "https://gnomad.broadinstitute.org/",
+      "api_base": "https://gnomad.broadinstitute.org/api",
+      "version": "v4.1",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["wgs", "wes"],
+      "best_for": "Variant filtering — flag common variants as likely benign; allele frequency lookup",
+      "populations": ["African", "Amish", "Ashkenazi Jewish", "East Asian", "European", "Finnish", "Latino", "Middle Eastern", "South Asian"],
+      "notes": "GraphQL API available. Also available on GCS: gs://gcp-public-data--gnomad/"
+    },
+    "dbgap": {
+      "name": "dbGaP",
+      "full_name": "Database of Genotypes and Phenotypes",
+      "description": "Controlled-access human genomic + phenotypic data from large studies",
+      "url": "https://www.ncbi.nlm.nih.gov/gap/",
+      "free": true,
+      "registration_required": true,
+      "notes": "Requires IRB + dbGaP data access agreement (institution-level). Turnaround ~2-4 weeks.",
+      "analysis_types": ["wgs", "wes", "rnaseq"],
+      "key_studies": {
+        "TOPMed": "100,000 WGS samples, diverse populations",
+        "UK_Biobank": "500,000 WES + SNP array (separate access)",
+        "All_of_Us": "250,000 diverse US participants"
+      }
+    },
+    "uk_biobank": {
+      "name": "UK Biobank",
+      "full_name": "UK Biobank",
+      "description": "500,000 UK participants: WES, WGS, SNP array, imaging, phenotypes, EHR",
+      "url": "https://www.ukbiobank.ac.uk/",
+      "free": false,
+      "registration_required": true,
+      "cost": "Application fee + data access fee (~£1,000-5,000)",
+      "analysis_types": ["wgs", "wes", "methylation"],
+      "best_for": "Largest population genetics resource; phenome-wide association studies"
+    },
+    "hmp": {
+      "name": "HMP",
+      "full_name": "Human Microbiome Project",
+      "description": "16S + WGS microbiome from healthy adults across all body sites",
+      "url": "https://www.hmpdacc.org/",
+      "api_base": "https://portal.hmpdacc.org/",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["microbiome"],
+      "best_for": "Healthy microbiome reference for gut, oral, skin, vaginal, nasal",
+      "versions": {
+        "HMP1": "242 healthy adults, 18 body sites",
+        "HMP2": "iHMP — integrative (microbiome + host multi-omics)"
+      }
+    },
+    "mgp": {
+      "name": "MGP",
+      "full_name": "Metagenomics Projects (curatedMetagenomicData)",
+      "description": "Uniformly processed microbiome data from 20,000+ samples across 100+ studies",
+      "r_package": "curatedMetagenomicData",
+      "free": true,
+      "analysis_types": ["microbiome"],
+      "best_for": "Ready-to-use microbiome data for meta-analysis and control comparison"
+    },
+    "pride": {
+      "name": "PRIDE",
+      "full_name": "PRoteomics IDEntifications Database",
+      "description": "Mass spectrometry proteomics data repository",
+      "url": "https://www.ebi.ac.uk/pride/",
+      "api_base": "https://www.ebi.ac.uk/pride/ws/archive/v2/",
+      "search_api": "https://www.ebi.ac.uk/pride/ws/archive/v2/projects?keyword={query}&pageSize={n}",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["proteomics"],
+      "best_for": "Proteomics reference datasets; control protein expression"
+    },
+    "arrayexpress": {
+      "name": "ArrayExpress",
+      "full_name": "ArrayExpress / EMBL-EBI BioStudies",
+      "description": "Functional genomics data (overlaps with GEO; European mirror + additional datasets)",
+      "url": "https://www.ebi.ac.uk/biostudies/arrayexpress",
+      "api_base": "https://www.ebi.ac.uk/biostudies/api/v1/",
+      "search_api": "https://www.ebi.ac.uk/biostudies/api/v1/search?query={query}&type=experiments&pageSize={n}",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["rnaseq", "chipseq", "methylation", "scrnaseq"]
+    },
+    "ccle": {
+      "name": "CCLE",
+      "full_name": "Cancer Cell Line Encyclopedia",
+      "description": "Multi-omics from 1,000+ cancer cell lines: RNA-seq, WES, RPPA, methylation, drug response",
+      "url": "https://sites.broadinstitute.org/ccle/",
+      "depmap_portal": "https://depmap.org/portal/",
+      "api": "https://cds.team/depmap/",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["rnaseq", "wes", "methylation"],
+      "best_for": "In vitro cancer model reference; compare patient tumors to cell lines"
+    },
+    "roadmap_epigenomics": {
+      "name": "Roadmap Epigenomics",
+      "full_name": "NIH Roadmap Epigenomics Mapping Consortium",
+      "description": "Histone ChIP-seq, DNA methylation, ATAC-seq from 111 reference epigenomes",
+      "url": "https://egg2.wustl.edu/roadmap/web_portal/",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["chipseq", "methylation", "atacseq"],
+      "best_for": "Reference histone marks and chromatin state maps for healthy tissues"
+    },
+    "icgc": {
+      "name": "ICGC",
+      "full_name": "International Cancer Genome Consortium",
+      "description": "WGS + transcriptome from 25,000 cancers across 50+ cancer types (international cohorts)",
+      "url": "https://dcc.icgc.org/",
+      "api_base": "https://dcc.icgc.org/api/v1/",
+      "free": true,
+      "registration_required": true,
+      "notes": "Some data requires DACO approval",
+      "analysis_types": ["wgs", "rnaseq"],
+      "best_for": "Non-US cancer cohorts; driver mutation analysis"
+    },
+    "blueprint": {
+      "name": "BLUEPRINT Epigenome",
+      "description": "Methylation + ChIP-seq + RNA-seq from hematopoietic cells",
+      "url": "https://blueprint-epigenome.eu/",
+      "free": true,
+      "registration_required": false,
+      "analysis_types": ["chipseq", "methylation", "rnaseq"],
+      "best_for": "Blood cell type reference epigenomes"
+    },
+    "single_cell_resources": {
+      "pancan_atlas": {
+        "name": "Tumor microenvironment single-cell pan-cancer atlas",
+        "description": "scRNA-seq from 500+ tumor samples across cancer types",
+        "url": "https://www.weizmann.ac.il/sites/3CA/",
+        "best_for": "Cancer cell + immune + stromal reference in tumors"
+      },
+      "immune_atlas": {
+        "name": "Human Immune Cell Atlas",
+        "description": "All blood + lymphoid cell types scRNA-seq",
+        "url": "https://www.sanger.ac.uk/tool/cell-ranger/",
+        "best_for": "Immune cell reference for PBMC scRNA-seq"
+      }
+    }
+  },
+  "analysis_type_to_databases": {
+    "rnaseq":         ["geo", "gtex", "tcga", "arrayexpress", "ccle"],
+    "wgs":            ["tcga", "gnomad", "dbgap", "uk_biobank", "icgc", "sra"],
+    "wes":            ["tcga", "gnomad", "dbgap", "ccle", "sra"],
+    "scrnaseq":       ["hca", "cellxgene", "geo", "sra"],
+    "methylation":    ["geo", "tcga", "roadmap_epigenomics", "encode", "arrayexpress"],
+    "chipseq":        ["encode", "geo", "roadmap_epigenomics", "blueprint", "arrayexpress"],
+    "atacseq":        ["encode", "geo", "arrayexpress"],
+    "microbiome":     ["hmp", "mgp", "sra", "geo"],
+    "proteomics":     ["pride"],
+    "immune_profiling":["geo", "hca", "cellxgene", "sra"],
+    "ctdna":          ["tcga", "icgc", "dbgap"],
+    "riboseq":        ["geo", "sra"],
+    "spatial_transcriptomics": ["geo", "hca", "cellxgene"],
+    "multiomics":     ["tcga", "ccle", "hca", "geo"]
+  }
+}

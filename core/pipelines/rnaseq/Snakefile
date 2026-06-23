@@ -1,0 +1,202 @@
+# RNA-seq pipeline — uses Docker containers via shell (no Singularity/Apptainer needed)
+# Runs FastQC always. STAR alignment runs only when star_index + gtf are provided.
+
+configfile: "config.yaml"
+
+import csv
+import os
+from pathlib import Path
+
+# ── Load samplesheet ──────────────────────────────────────────────────────────
+
+def load_samplesheet(path):
+    rows = {}
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            rows[row["sample"]] = {
+                "R1": row.get("fastq_1", ""),
+                "R2": row.get("fastq_2", ""),
+                "strandedness": row.get("strandedness", "reverse"),
+            }
+    return rows
+
+SS_PATH = config.get("samplesheet_path", "")
+if not SS_PATH or not Path(SS_PATH).exists():
+    raise ValueError(f"Samplesheet not found: {SS_PATH!r}. Check config.yaml.")
+
+SAMPLES = load_samplesheet(SS_PATH)
+SAMPLE_NAMES = list(SAMPLES.keys())
+RESULTS = Path(config.get("results_dir", "results")).resolve()
+THREADS = config.get("threads", 8)
+MEM_GB  = config.get("memory_gb", 32)
+
+# ── Genome resources (optional — FastQC runs without them) ────────────────────
+STAR_INDEX = config.get("star_index", "")
+GTF        = config.get("gtf", "")
+HAS_GENOME = bool(STAR_INDEX) and Path(STAR_INDEX).exists() and bool(GTF) and Path(GTF).exists()
+
+# ── Docker helper ─────────────────────────────────────────────────────────────
+# Mount $HOME so any path under /Users/... is accessible inside the container
+DOCKER_FLAGS = "-v $HOME:$HOME --rm"
+
+# ── Targets ───────────────────────────────────────────────────────────────────
+QC_OUT     = expand(str(RESULTS / "fastqc" / "{sample}_R1_fastqc.html"), sample=SAMPLE_NAMES)
+TRIM_OUT   = expand(str(RESULTS / "trimmed" / "{sample}_R1_trimmed.fastq.gz"), sample=SAMPLE_NAMES)
+ALIGN_OUT  = expand(str(RESULTS / "aligned" / "{sample}.bam"), sample=SAMPLE_NAMES)
+COUNT_OUT  = expand(str(RESULTS / "counts" / "{sample}.counts.txt"), sample=SAMPLE_NAMES)
+MERGED_OUT = str(RESULTS / "counts" / "merged_counts.tsv")
+MQOUT      = str(RESULTS / "multiqc" / "multiqc_report.html")
+
+rule all:
+    input:
+        QC_OUT,
+        TRIM_OUT,
+        *(ALIGN_OUT + COUNT_OUT + [MERGED_OUT] if HAS_GENOME else []),
+        MQOUT,
+
+
+# ── Quality control ───────────────────────────────────────────────────────────
+
+rule fastqc_raw:
+    input:
+        r1 = lambda wc: SAMPLES[wc.sample]["R1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["R2"],
+    output:
+        h1 = str(RESULTS / "fastqc" / "{sample}_R1_fastqc.html"),
+        h2 = str(RESULTS / "fastqc" / "{sample}_R2_fastqc.html"),
+    log: str(RESULTS / "logs" / "fastqc" / "{sample}.log")
+    threads: 4
+    shell:
+        """
+        mkdir -p {RESULTS}/fastqc {RESULTS}/logs/fastqc
+        docker run {DOCKER_FLAGS} \
+            biocontainers/fastqc:v0.11.9_cv8 \
+            fastqc {input.r1} {input.r2} \
+            -o {RESULTS}/fastqc -t {threads} 2>{log}
+        """
+
+
+# ── Adapter trimming ──────────────────────────────────────────────────────────
+
+rule trim_reads:
+    input:
+        r1 = lambda wc: SAMPLES[wc.sample]["R1"],
+        r2 = lambda wc: SAMPLES[wc.sample]["R2"],
+    output:
+        r1   = str(RESULTS / "trimmed" / "{sample}_R1_trimmed.fastq.gz"),
+        r2   = str(RESULTS / "trimmed" / "{sample}_R2_trimmed.fastq.gz"),
+        json = str(RESULTS / "trimmed" / "{sample}_fastp.json"),
+        html = str(RESULTS / "trimmed" / "{sample}_fastp.html"),
+    log: str(RESULTS / "logs" / "trim" / "{sample}.log")
+    threads: THREADS
+    shell:
+        """
+        mkdir -p {RESULTS}/trimmed {RESULTS}/logs/trim
+        docker run {DOCKER_FLAGS} \
+            biocontainers/fastp:v0.23.4_cv1 \
+            fastp -i {input.r1} -I {input.r2} \
+                  -o {output.r1} -O {output.r2} \
+                  --json {output.json} --html {output.html} \
+                  --thread {threads} \
+                  --detect_adapter_for_pe \
+                  --qualified_quality_phred 20 \
+                  --length_required 50 2>{log}
+        """
+
+
+# ── Alignment (only when genome index + GTF are provided) ────────────────────
+
+if HAS_GENOME:
+
+    rule star_align:
+        input:
+            r1    = str(RESULTS / "trimmed" / "{sample}_R1_trimmed.fastq.gz"),
+            r2    = str(RESULTS / "trimmed" / "{sample}_R2_trimmed.fastq.gz"),
+            index = STAR_INDEX,
+        output:
+            bam = str(RESULTS / "aligned" / "{sample}.bam"),
+            log = str(RESULTS / "aligned" / "{sample}.Log.final.out"),
+        log: str(RESULTS / "logs" / "star" / "{sample}.log")
+        threads: THREADS
+        shell:
+            """
+            mkdir -p {RESULTS}/aligned {RESULTS}/logs/star
+            docker run {DOCKER_FLAGS} \
+                quay.io/biocontainers/star:2.7.11a--h0033a41_0 \
+                STAR --runThreadN {threads} \
+                     --genomeDir {input.index} \
+                     --readFilesIn {input.r1} {input.r2} \
+                     --readFilesCommand zcat \
+                     --outSAMtype BAM SortedByCoordinate \
+                     --outSAMattributes NH HI AS NM MD \
+                     --outFileNamePrefix {RESULTS}/aligned/{wildcards.sample}. \
+                     --outFilterIntronMotifs RemoveNoncanonical \
+                     --alignIntronMax 1000000 \
+                     --alignMatesGapMax 1000000 \
+                     --quantMode GeneCounts 2>{log}
+            mv {RESULTS}/aligned/{wildcards.sample}.Aligned.sortedByCoord.out.bam {output.bam}
+            mv {RESULTS}/aligned/{wildcards.sample}.Log.final.out {output.log}
+            """
+
+    rule index_bam:
+        input:  str(RESULTS / "aligned" / "{sample}.bam")
+        output: str(RESULTS / "aligned" / "{sample}.bam.bai")
+        shell:
+            """
+            docker run {DOCKER_FLAGS} \
+                quay.io/biocontainers/samtools:1.19--h50ea8bc_0 \
+                samtools index {input}
+            """
+
+    rule featurecounts:
+        input:
+            bam = str(RESULTS / "aligned" / "{sample}.bam"),
+            bai = str(RESULTS / "aligned" / "{sample}.bam.bai"),
+            gtf = GTF,
+        output:
+            counts = str(RESULTS / "counts" / "{sample}.counts.txt"),
+        log: str(RESULTS / "logs" / "featurecounts" / "{sample}.log")
+        threads: THREADS
+        shell:
+            """
+            mkdir -p {RESULTS}/counts {RESULTS}/logs/featurecounts
+            docker run {DOCKER_FLAGS} \
+                quay.io/biocontainers/subread:2.0.6--he4a0461_0 \
+                featureCounts -T {threads} -p --countReadPairs \
+                    -a {input.gtf} -o {output.counts} {input.bam} 2>{log}
+            """
+
+    rule merge_counts:
+        input:
+            expand(str(RESULTS / "counts" / "{sample}.counts.txt"), sample=SAMPLE_NAMES)
+        output:
+            MERGED_OUT
+        run:
+            import pandas as pd
+            dfs = []
+            for f in input:
+                df = pd.read_csv(f, sep="\t", comment="#", index_col=0)
+                sname = Path(f).stem.replace(".counts", "")
+                dfs.append(df.iloc[:, -1].rename(sname))
+            pd.concat(dfs, axis=1).to_csv(output[0], sep="\t")
+
+
+# ── MultiQC summary ───────────────────────────────────────────────────────────
+
+rule multiqc:
+    input:
+        QC_OUT,
+        TRIM_OUT,
+        *(ALIGN_OUT if HAS_GENOME else []),
+        *(COUNT_OUT if HAS_GENOME else []),
+    output:
+        MQOUT
+    log: str(RESULTS / "logs" / "multiqc.log")
+    shell:
+        """
+        mkdir -p {RESULTS}/multiqc {RESULTS}/logs
+        docker run {DOCKER_FLAGS} \
+            quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0 \
+            multiqc {RESULTS} -o {RESULTS}/multiqc --force 2>{log}
+        echo "Pipeline completed successfully."
+        """

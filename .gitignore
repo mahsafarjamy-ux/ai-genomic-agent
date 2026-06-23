@@ -1,0 +1,15 @@
+.env
+.env.local
+.env.production
+__pycache__/
+*.pyc
+node_modules/
+.next/
+venv/
+.venv/
+.DS_Store
+*.db
+uploads/
+work/
+core/pipelines/*/.snakemake/
+results/

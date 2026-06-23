@@ -1,0 +1,152 @@
+# ctDNA / Cell-free DNA Pipeline
+# Mutect2 (low VAF) + ichorCNA (CNV) + Griffin (fragmentomics) + DELFI
+
+configfile: "config.yaml"
+
+SAMPLES      = config["samples"]
+GENOME_FA    = config["genome_fasta"]
+DBSNP        = config["dbsnp_vcf"]
+GNOMAD       = config.get("gnomad_vcf", "")
+GERMLINE_BAM = config.get("germline_bam", {})     # matched normal per sample (optional)
+RESULTS      = config.get("results_dir", "results")
+THREADS      = config.get("threads", 16)
+MEMORY       = config.get("memory_gb", 64)
+INTERVALS    = config.get("intervals", "")          # target regions (for panel)
+MIN_VAF      = config.get("min_vaf", 0.005)
+RUN_ICHOR    = config.get("run_ichor_cna", True)
+RUN_GRIFFIN  = config.get("run_griffin", True)
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/variants/{{sample}}.filtered.vcf.gz", sample=SAMPLES),
+        *([f"{RESULTS}/ichor/{{sample}}.cna.seg" for sample in SAMPLES] if RUN_ICHOR else []),
+        *([f"{RESULTS}/griffin/{{sample}}_gc_corrected.bw" for sample in SAMPLES] if RUN_GRIFFIN else []),
+        f"{RESULTS}/summary/cfdna_summary.tsv",
+        f"{RESULTS}/multiqc/multiqc_report.html",
+
+
+rule align_cfDNA:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output: f"{RESULTS}/aligned/{{sample}}.bam"
+    log: f"{RESULTS}/logs/bwa/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5"
+    shell:
+        """
+        bwa-mem2 mem -t {threads} \
+            -R "@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}\\tPL:ILLUMINA\\tLB:cfDNA" \
+            {GENOME_FA} {input.r1} {input.r2} 2>{log} | \
+        samtools sort -@ {threads} -o {output}
+        samtools index {output}
+        """
+
+
+rule mutect2_cfDNA:
+    input:
+        tumor=f"{RESULTS}/aligned/{{sample}}.bam",
+        normal=lambda wc: GERMLINE_BAM.get(wc.sample, []),
+    output:
+        vcf=f"{RESULTS}/variants/{{sample}}.unfiltered.vcf.gz",
+        stats=f"{RESULTS}/variants/{{sample}}.mutect2.stats",
+    log: f"{RESULTS}/logs/mutect2/{{sample}}.log"
+    threads: THREADS
+    resources: mem_mb=MEMORY * 1024
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    run:
+        normal_flag = f"-I {input.normal} --normal-sample {wildcards.sample}_normal" if input.normal else ""
+        gnomad_flag = f"--germline-resource {GNOMAD}" if GNOMAD else ""
+        interval_flag = f"-L {INTERVALS}" if INTERVALS else ""
+        shell(f"""
+        gatk Mutect2 \
+            -R {GENOME_FA} \
+            -I {input.tumor} --tumor-sample {wildcards.sample} \
+            {normal_flag} {gnomad_flag} {interval_flag} \
+            --min-allele-fraction {MIN_VAF} \
+            --f1r2-tar-gz {RESULTS}/variants/{wildcards.sample}.f1r2.tar.gz \
+            -O {output.vcf} 2>{log}
+        """)
+
+
+rule filter_mutect2:
+    input:
+        vcf=f"{RESULTS}/variants/{{sample}}.unfiltered.vcf.gz",
+        stats=f"{RESULTS}/variants/{{sample}}.mutect2.stats",
+    output: f"{RESULTS}/variants/{{sample}}.filtered.vcf.gz"
+    log: f"{RESULTS}/logs/filter/{{sample}}.log"
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk FilterMutectCalls \
+            -R {GENOME_FA} \
+            -V {input.vcf} \
+            --stats {input.stats} \
+            -O {output} 2>{log}
+        """
+
+
+if RUN_ICHOR:
+    rule readcounter:
+        input: f"{RESULTS}/aligned/{{sample}}.bam"
+        output: f"{RESULTS}/ichor/{{sample}}.wig"
+        container: "docker://quay.io/biocontainers/hmmcopy-utils:0.1.1--h9ee0642_3"
+        shell: "readCounter --window 1000000 --quality 20 {input} > {output}"
+
+    rule ichorcna:
+        input: f"{RESULTS}/ichor/{{sample}}.wig"
+        output:
+            seg=f"{RESULTS}/ichor/{{sample}}.cna.seg",
+            params=f"{RESULTS}/ichor/{{sample}}.params.txt",
+        log: f"{RESULTS}/logs/ichor/{{sample}}.log"
+        container: "docker://quay.io/biocontainers/r-ichorcna:0.5.0--r43hdfd78af_0"
+        shell:
+            """
+            Rscript /usr/local/bin/runIchorCNA.R \
+                --id {wildcards.sample} \
+                --WIG {input} \
+                --ploidy 2 \
+                --normal 0.5 \
+                --maxCN 5 \
+                --includeHOMD False \
+                --chrs "c(1:22)" \
+                --outDir {RESULTS}/ichor/ 2>{log}
+            """
+
+
+if RUN_GRIFFIN:
+    rule griffin_gc_correction:
+        input: f"{RESULTS}/aligned/{{sample}}.bam"
+        output: f"{RESULTS}/griffin/{{sample}}_gc_corrected.bw"
+        log: f"{RESULTS}/logs/griffin/{{sample}}.log"
+        threads: THREADS
+        container: "docker://quay.io/biocontainers/griffin:0.2.1--pyhdfd78af_0"
+        shell:
+            """
+            griffin GC_correction \
+                --bam {input} \
+                --genome {GENOME_FA} \
+                --output {output} \
+                --cores {threads} 2>{log}
+            """
+
+
+rule cfdna_summary:
+    input:
+        vcfs=expand(f"{RESULTS}/variants/{{sample}}.filtered.vcf.gz", sample=SAMPLES),
+    output: f"{RESULTS}/summary/cfdna_summary.tsv"
+    run:
+        import subprocess, pandas as pd
+        rows = []
+        for sample, vcf in zip(SAMPLES, input.vcfs):
+            n_variants = int(subprocess.check_output(f"bcftools view -f PASS {vcf} | grep -v '^#' | wc -l", shell=True))
+            rows.append({"sample": sample, "n_somatic_variants": n_variants})
+        pd.DataFrame(rows).to_csv(output[0], sep="\t", index=False)
+
+
+rule multiqc:
+    input: expand(f"{RESULTS}/aligned/{{sample}}.bam", sample=SAMPLES)
+    output: f"{RESULTS}/multiqc/multiqc_report.html"
+    container: "docker://quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0"
+    shell: "multiqc {RESULTS} -o {RESULTS}/multiqc --force"

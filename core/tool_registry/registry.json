@@ -1,0 +1,501 @@
+{
+  "version": "2.0.0",
+  "last_updated": "2026-06-15",
+  "categories": {
+    "rnaseq": {
+      "name": "Bulk RNA-seq",
+      "description": "Transcriptome profiling from bulk tissue",
+      "stages": {
+        "qc": [
+          {"tool": "FastQC", "version": "0.12.1", "purpose": "Raw read QC", "docker": "biocontainers/fastqc:v0.12.1_cv2", "recommended": true, "speed": "fast", "notes": "Always run first"},
+          {"tool": "MultiQC", "version": "1.22", "purpose": "Aggregate QC reports", "docker": "quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0", "recommended": true, "speed": "fast"}
+        ],
+        "trimming": [
+          {"tool": "fastp", "version": "0.23.4", "purpose": "Adapter trimming + QC", "docker": "biocontainers/fastp:v0.23.4_cv1", "recommended": true, "speed": "fast", "notes": "Faster than Trimmomatic, auto-detects adapters"},
+          {"tool": "Trimmomatic", "version": "0.39", "purpose": "Adapter trimming", "docker": "quay.io/biocontainers/trimmomatic:0.39--hdfd78af_2", "recommended": false, "notes": "Legacy; use fastp instead"}
+        ],
+        "alignment": [
+          {"tool": "STAR", "version": "2.7.11a", "purpose": "Splice-aware alignment", "docker": "quay.io/biocontainers/star:2.7.11a--h0033a41_0", "recommended": true, "speed": "fast", "ram_gb": 32, "notes": "Best for human/mouse, handles novel junctions"},
+          {"tool": "HISAT2", "version": "2.2.1", "purpose": "Splice-aware alignment, low RAM", "docker": "quay.io/biocontainers/hisat2:2.2.1--h87f3376_4", "recommended": false, "ram_gb": 8, "notes": "Use when RAM is limited"},
+          {"tool": "Salmon", "version": "1.10.2", "purpose": "Quasi-alignment + quantification", "docker": "combinelab/salmon:1.10.2", "recommended": true, "speed": "very_fast", "notes": "No BAM output; best for DE only workflows"}
+        ],
+        "quantification": [
+          {"tool": "featureCounts", "version": "2.0.6", "purpose": "Gene-level counts from BAM", "docker": "quay.io/biocontainers/subread:2.0.6--he4a0461_0", "recommended": true, "notes": "Part of Subread package"},
+          {"tool": "HTSeq", "version": "2.0.5", "purpose": "Gene-level counts", "docker": "quay.io/biocontainers/htseq:2.0.5--py310h4b81fae_0", "recommended": false, "notes": "Slower than featureCounts"},
+          {"tool": "kallisto", "version": "0.50.1", "purpose": "Pseudoalignment + quantification", "docker": "quay.io/biocontainers/kallisto:0.50.1--hdbdd923_1", "recommended": false, "notes": "Ultra-fast, isoform-level"}
+        ],
+        "differential_expression": [
+          {"tool": "DESeq2", "version": "1.42.0", "language": "R", "purpose": "Differential gene expression", "conda": "bioconductor-deseq2", "recommended": true, "notes": "Best for bulk RNA-seq, handles overdispersion"},
+          {"tool": "edgeR", "version": "4.0.14", "language": "R", "purpose": "Differential expression", "conda": "bioconductor-edger", "recommended": false, "notes": "Better for very small N"},
+          {"tool": "limma-voom", "version": "3.58.0", "language": "R", "purpose": "Differential expression", "conda": "bioconductor-limma", "recommended": false, "notes": "Best for microarray or complex designs"}
+        ],
+        "pathway_analysis": [
+          {"tool": "clusterProfiler", "version": "4.10.0", "language": "R", "purpose": "GO and KEGG enrichment", "conda": "bioconductor-clusterprofiler", "recommended": true},
+          {"tool": "GSEA", "version": "4.3.3", "purpose": "Gene set enrichment analysis", "recommended": true, "notes": "Preranked GSEA avoids threshold issues"},
+          {"tool": "fgsea", "version": "1.28.0", "language": "R", "purpose": "Fast GSEA", "conda": "bioconductor-fgsea", "recommended": true, "notes": "100x faster than GSEA"},
+          {"tool": "STRING-db", "version": "12.0", "purpose": "Protein interaction networks", "api": "https://string-db.org/api", "recommended": true}
+        ],
+        "isoform_analysis": [
+          {"tool": "SUPPA2", "version": "2.3", "purpose": "Differential splicing", "docker": "quay.io/biocontainers/suppa:2.3--py37_0", "recommended": true},
+          {"tool": "rMATS", "version": "4.3.0", "purpose": "Alternative splicing analysis", "docker": "xinglab/rmats:v4.3.0", "recommended": true}
+        ]
+      }
+    },
+    "wgs": {
+      "name": "Whole Genome Sequencing",
+      "description": "Germline or somatic variant discovery from WGS",
+      "stages": {
+        "qc": [
+          {"tool": "FastQC", "version": "0.12.1", "docker": "biocontainers/fastqc:v0.12.1_cv2", "recommended": true},
+          {"tool": "Fastp", "version": "0.23.4", "docker": "biocontainers/fastp:v0.23.4_cv1", "recommended": true},
+          {"tool": "Picard CollectWgsMetrics", "version": "3.1.1", "docker": "broadinstitute/picard:3.1.1", "purpose": "Coverage metrics", "recommended": true},
+          {"tool": "mosdepth", "version": "0.3.8", "docker": "quay.io/biocontainers/mosdepth:0.3.8--hd299d5a_0", "purpose": "Fast depth calculation", "recommended": true}
+        ],
+        "alignment": [
+          {"tool": "BWA-MEM2", "version": "2.2.1", "docker": "quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5", "recommended": true, "speed": "fast", "notes": "2-3x faster than BWA-MEM"},
+          {"tool": "Parabricks", "version": "4.3", "purpose": "GPU-accelerated BWA+GATK", "recommended": false, "notes": "Requires NVIDIA GPU; 50x speedup"}
+        ],
+        "preprocessing": [
+          {"tool": "GATK MarkDuplicates", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": true},
+          {"tool": "GATK BQSR", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": true}
+        ],
+        "germline_variant_calling": [
+          {"tool": "GATK HaplotypeCaller", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": true, "notes": "GVCF mode for joint genotyping"},
+          {"tool": "DeepVariant", "version": "1.6.1", "docker": "google/deepvariant:1.6.1", "recommended": true, "notes": "DL-based; best accuracy on Illumina short reads"},
+          {"tool": "GATK GenotypeGVCFs", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "purpose": "Joint genotyping", "recommended": true}
+        ],
+        "somatic_variant_calling": [
+          {"tool": "Mutect2", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": true, "notes": "Best for tumor-normal pairs"},
+          {"tool": "Strelka2", "version": "2.9.10", "docker": "quay.io/biocontainers/strelka:2.9.10--h9ee0642_1", "recommended": true, "notes": "Fast, good for SNV+indel"},
+          {"tool": "VarScan2", "version": "2.4.4", "docker": "quay.io/biocontainers/varscan:2.4.4--hdfd78af_2", "recommended": false}
+        ],
+        "variant_annotation": [
+          {"tool": "VEP", "version": "111", "docker": "ensemblorg/ensembl-vep:release_111", "recommended": true, "notes": "Ensembl; comprehensive, slow"},
+          {"tool": "ANNOVAR", "version": "2023", "purpose": "Fast variant annotation", "recommended": true, "notes": "Faster than VEP; needs license for some databases"},
+          {"tool": "SnpEff", "version": "5.2", "docker": "quay.io/biocontainers/snpeff:5.2--hdfd78af_0", "recommended": false},
+          {"tool": "ClinVar", "purpose": "Clinical significance lookup", "api": "https://eutils.ncbi.nlm.nih.gov/", "recommended": true},
+          {"tool": "gnomAD", "version": "4.1", "purpose": "Population allele frequencies", "api": "https://gnomad.broadinstitute.org/api", "recommended": true},
+          {"tool": "ACMG ClassifyCNV", "purpose": "ACMG 5-tier variant classification", "recommended": true}
+        ],
+        "cnv": [
+          {"tool": "PURPLE", "version": "4.0", "docker": "gridss/purple:latest", "purpose": "CNV + purity + ploidy (tumor)", "recommended": true},
+          {"tool": "CNVkit", "version": "0.9.10", "docker": "etal/cnvkit:0.9.10", "recommended": true, "notes": "Works for both WGS and WES"},
+          {"tool": "GATK gCNV", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": false, "notes": "Best for germline CNV in cohorts"}
+        ],
+        "structural_variants": [
+          {"tool": "DELLY", "version": "1.2.6", "docker": "quay.io/biocontainers/delly:1.2.6--ha41ced6_0", "recommended": true, "notes": "Best for deletions/inversions/translocations"},
+          {"tool": "Manta", "version": "1.6.0", "docker": "quay.io/biocontainers/manta:1.6.0--py27_0", "recommended": true, "notes": "Fast, good for insertions"},
+          {"tool": "GRIDSS", "version": "2.13.2", "docker": "gridss/gridss:2.13.2", "recommended": true, "notes": "Best for complex rearrangements"},
+          {"tool": "Parliament2", "version": "0.1.11", "docker": "dnanexus/parliament2:0.1.11", "purpose": "SV ensemble caller", "recommended": true},
+          {"tool": "SURVIVOR", "version": "1.0.7", "purpose": "Merge SV calls from multiple callers", "recommended": true},
+          {"tool": "shatterseek", "version": "0.4", "language": "R", "purpose": "Chromothripsis detection", "recommended": false},
+          {"tool": "Sniffles2", "version": "2.3.3", "docker": "quay.io/biocontainers/sniffles:2.3.3--pyhdfd78af_0", "purpose": "Long-read SV (ONT/PacBio)", "recommended": true}
+        ]
+      }
+    },
+    "wes": {
+      "name": "Whole Exome Sequencing",
+      "description": "Exome capture + variant calling",
+      "notes": "Same core pipeline as WGS; add capture QC steps",
+      "stages": {
+        "qc": [
+          {"tool": "FastQC", "version": "0.12.1", "docker": "biocontainers/fastqc:v0.12.1_cv2", "recommended": true},
+          {"tool": "Picard CalculateHsMetrics", "version": "3.1.1", "docker": "broadinstitute/picard:3.1.1", "purpose": "Capture efficiency metrics", "recommended": true},
+          {"tool": "mosdepth", "version": "0.3.8", "docker": "quay.io/biocontainers/mosdepth:0.3.8--hd299d5a_0", "recommended": true}
+        ],
+        "alignment": [{"tool": "BWA-MEM2", "version": "2.2.1", "recommended": true}],
+        "variant_calling": [
+          {"tool": "GATK HaplotypeCaller", "version": "4.5.0", "recommended": true, "notes": "Use --intervals to restrict to capture regions"},
+          {"tool": "DeepVariant", "version": "1.6.1", "docker": "google/deepvariant:1.6.1", "recommended": true},
+          {"tool": "Mutect2", "version": "4.5.0", "recommended": true, "notes": "For somatic calls from tumor WES"}
+        ],
+        "cnv": [
+          {"tool": "CNVkit", "version": "0.9.10", "recommended": true, "notes": "Designed for exome capture"},
+          {"tool": "ExomeCNV", "version": "1.4", "language": "R", "recommended": false}
+        ]
+      }
+    },
+    "scrnaseq": {
+      "name": "Single-cell RNA-seq",
+      "description": "Single-cell transcriptomics (10x Chromium, Smart-seq2, Parse, etc.)",
+      "stages": {
+        "alignment_quantification": [
+          {"tool": "Cell Ranger", "version": "8.0", "purpose": "10x Genomics official aligner", "recommended": true, "notes": "Required for 10x data; proprietary"},
+          {"tool": "STARsolo", "version": "2.7.11a", "docker": "quay.io/biocontainers/star:2.7.11a--h0033a41_0", "purpose": "Open-source Cell Ranger alternative", "recommended": true},
+          {"tool": "Alevin-fry", "version": "0.10.0", "purpose": "Ultra-fast, memory-efficient", "recommended": false},
+          {"tool": "kallisto|bustools", "version": "0.50.1", "purpose": "Fast pseudoalignment", "recommended": false}
+        ],
+        "qc_filtering": [
+          {"tool": "Seurat", "version": "5.1.0", "language": "R", "docker": "satijalab/seurat:5.1.0", "recommended": true},
+          {"tool": "Scanpy", "version": "1.10.0", "language": "Python", "docker": "quay.io/biocontainers/scanpy:1.10.0--pyhdfd78af_0", "recommended": true},
+          {"tool": "scDblFinder", "version": "1.16.0", "language": "R", "purpose": "Doublet detection", "recommended": true},
+          {"tool": "DoubletFinder", "version": "2.0.4", "language": "R", "purpose": "Doublet detection", "recommended": false}
+        ],
+        "normalization": [
+          {"tool": "scran", "version": "1.30.0", "language": "R", "purpose": "Pooling-based normalization", "recommended": true},
+          {"tool": "sctransform", "version": "0.4.1", "language": "R", "purpose": "Variance-stabilizing normalization", "recommended": true, "notes": "Now default in Seurat v5"}
+        ],
+        "integration_batch_correction": [
+          {"tool": "Harmony", "version": "1.2.0", "language": "R", "purpose": "Fast integration", "recommended": true, "notes": "Best for large datasets"},
+          {"tool": "scVI", "version": "1.1.0", "language": "Python", "purpose": "Variational autoencoder integration", "recommended": true, "notes": "Best for complex batch effects"},
+          {"tool": "BBKNN", "version": "1.6.0", "language": "Python", "purpose": "Batch-balanced KNN", "recommended": false},
+          {"tool": "Seurat CCA/RPCA", "version": "5.1.0", "language": "R", "purpose": "Canonical correlation integration", "recommended": false}
+        ],
+        "clustering": [
+          {"tool": "Leiden algorithm", "purpose": "Community detection (better than Louvain)", "recommended": true},
+          {"tool": "Louvain algorithm", "recommended": false, "notes": "Deprecated; use Leiden"}
+        ],
+        "cell_type_annotation": [
+          {"tool": "SingleR", "version": "2.4.0", "language": "R", "purpose": "Automatic cell type annotation", "recommended": true},
+          {"tool": "CellTypist", "version": "1.6.2", "language": "Python", "purpose": "ML-based cell type prediction", "recommended": true, "notes": "Great for immune cells"},
+          {"tool": "scType", "version": "1.0", "language": "R", "purpose": "Marker-based annotation", "recommended": true}
+        ],
+        "trajectory_pseudotime": [
+          {"tool": "Monocle3", "version": "1.3.6", "language": "R", "purpose": "Cell trajectory inference", "recommended": true},
+          {"tool": "scVelo", "version": "0.3.2", "language": "Python", "purpose": "RNA velocity", "recommended": true, "notes": "Requires spliced/unspliced counts"},
+          {"tool": "Palantir", "version": "1.3.3", "language": "Python", "recommended": false}
+        ],
+        "cell_communication": [
+          {"tool": "CellChat", "version": "2.1.1", "language": "R", "purpose": "Cell-cell communication", "recommended": true},
+          {"tool": "NicheNet", "version": "2.1.4", "language": "R", "purpose": "Ligand-target prediction", "recommended": true},
+          {"tool": "LIANA+", "version": "1.1.0", "language": "Python", "purpose": "Multi-method communication", "recommended": true}
+        ],
+        "gene_regulatory_networks": [
+          {"tool": "SCENIC+", "version": "1.0.2", "language": "Python", "purpose": "TF regulatory networks (RNA+ATAC)", "recommended": true},
+          {"tool": "pySCENIC", "version": "0.12.1", "language": "Python", "purpose": "TF networks from scRNA only", "recommended": true}
+        ]
+      }
+    },
+    "methylation": {
+      "name": "DNA Methylation",
+      "description": "WGBS, RRBS, EPIC array methylation profiling",
+      "stages": {
+        "sequencing_based": {
+          "alignment": [
+            {"tool": "Bismark", "version": "0.24.2", "docker": "quay.io/biocontainers/bismark:0.24.2--hdfd78af_0", "recommended": true, "notes": "Gold standard for bisulfite alignment"},
+            {"tool": "bwa-meth", "version": "0.2.7", "purpose": "Fast bisulfite alignment", "recommended": false}
+          ],
+          "methylation_calling": [
+            {"tool": "Bismark bismark2bedGraph", "version": "0.24.2", "recommended": true},
+            {"tool": "MethylDackel", "version": "0.6.1", "docker": "quay.io/biocontainers/methyldackel:0.6.1--h9a82719_0", "recommended": true, "notes": "Faster than Bismark extractor"}
+          ],
+          "dmr_analysis": [
+            {"tool": "DSS", "version": "2.50.0", "language": "R", "purpose": "DMR calling (best statistical model)", "recommended": true, "notes": "Handles biological replicates properly"},
+            {"tool": "methylKit", "version": "1.28.0", "language": "R", "purpose": "Differential methylation", "recommended": true},
+            {"tool": "dmrseq", "version": "1.22.0", "language": "R", "purpose": "Region-level testing", "recommended": true}
+          ]
+        },
+        "array_based": {
+          "preprocessing": [
+            {"tool": "minfi", "version": "1.48.0", "language": "R", "purpose": "EPIC/450k array processing", "recommended": true},
+            {"tool": "ChAMP", "version": "2.32.0", "language": "R", "purpose": "Complete EPIC array pipeline", "recommended": true}
+          ],
+          "normalization": [
+            {"tool": "SeSAMe", "version": "1.20.0", "language": "R", "purpose": "Best EPIC v2 normalization", "recommended": true}
+          ],
+          "dmr_from_array": [
+            {"tool": "limma", "version": "3.58.0", "language": "R", "recommended": true},
+            {"tool": "DMRcate", "version": "2.16.0", "language": "R", "recommended": true}
+          ],
+          "epigenetic_clock": [
+            {"tool": "DNAmClock", "purpose": "Horvath epigenetic age", "language": "R", "recommended": true},
+            {"tool": "ENmix", "version": "1.38.0", "language": "R", "purpose": "Comprehensive EPIC QC + analysis", "recommended": true}
+          ]
+        }
+      }
+    },
+    "chipseq": {
+      "name": "ChIP-seq",
+      "description": "Chromatin immunoprecipitation sequencing (TF binding, histone marks)",
+      "stages": {
+        "qc_trimming": [
+          {"tool": "FastQC", "version": "0.12.1", "recommended": true},
+          {"tool": "fastp", "version": "0.23.4", "recommended": true}
+        ],
+        "alignment": [
+          {"tool": "Bowtie2", "version": "2.5.3", "docker": "quay.io/biocontainers/bowtie2:2.5.3--py310h8d7afc0_0", "recommended": true, "notes": "Standard for ChIP-seq"},
+          {"tool": "BWA-MEM2", "version": "2.2.1", "recommended": false}
+        ],
+        "peak_calling": [
+          {"tool": "MACS3", "version": "3.0.1", "docker": "quay.io/biocontainers/macs3:3.0.1--py310h4b81fae_0", "recommended": true, "notes": "Narrow peaks for TF; broad peaks for H3K27me3/H3K9me3"},
+          {"tool": "SEACR", "version": "1.3", "purpose": "CUT&RUN / CUT&TAG peak calling", "recommended": true}
+        ],
+        "qc_enrichment": [
+          {"tool": "deepTools", "version": "3.5.4", "docker": "quay.io/biocontainers/deeptools:3.5.4--pyhdfd78af_1", "recommended": true, "notes": "plotFingerprint, bamCompare, plotHeatmap"},
+          {"tool": "phantompeakqualtools", "version": "1.2.2", "purpose": "Fragment size + NSC/RSC QC", "recommended": true}
+        ],
+        "annotation": [
+          {"tool": "ChIPseeker", "version": "1.38.0", "language": "R", "purpose": "Peak annotation + visualization", "recommended": true},
+          {"tool": "HOMER annotatePeaks", "version": "4.11", "docker": "quay.io/biocontainers/homer:4.11--pl5262h7d875b9_4", "recommended": true},
+          {"tool": "GREAT", "purpose": "Genomic region enrichment of annotations", "api": "http://great.stanford.edu/", "recommended": true}
+        ],
+        "motif_analysis": [
+          {"tool": "HOMER findMotifsGenome", "version": "4.11", "recommended": true},
+          {"tool": "MEME-Suite", "version": "5.5.5", "docker": "memesuite/memesuite:5.5.5", "recommended": true}
+        ],
+        "differential_binding": [
+          {"tool": "DiffBind", "version": "3.12.0", "language": "R", "recommended": true},
+          {"tool": "csaw", "version": "1.36.0", "language": "R", "recommended": false}
+        ]
+      }
+    },
+    "atacseq": {
+      "name": "ATAC-seq",
+      "description": "Chromatin accessibility profiling",
+      "stages": {
+        "qc_trimming": [
+          {"tool": "FastQC", "version": "0.12.1", "recommended": true},
+          {"tool": "fastp", "version": "0.23.4", "recommended": true, "params": {"min_length": 25, "detect_adapter": true}}
+        ],
+        "alignment": [
+          {"tool": "Bowtie2", "version": "2.5.3", "recommended": true, "params": {"--very-sensitive": true, "--no-mixed": true, "--no-discordant": true, "-X": 2000}},
+          {"tool": "Remove mitochondrial reads", "tool_name": "SAMtools", "notes": "chrM reads are artifact"}
+        ],
+        "peak_calling": [
+          {"tool": "MACS3", "version": "3.0.1", "recommended": true, "params": {"--nomodel": true, "--shift": -75, "--extsize": 150, "--keep-dup": "all"}},
+          {"tool": "Genrich", "version": "0.6.1", "purpose": "ATAC-specific peak caller", "recommended": false}
+        ],
+        "footprinting": [
+          {"tool": "TOBIAS", "version": "0.16.0", "docker": "quay.io/biocontainers/tobias:0.16.0--py310hd9da9d5_0", "purpose": "TF footprinting from ATAC", "recommended": true},
+          {"tool": "HINT-ATAC", "version": "0.17.3", "purpose": "TF footprinting", "recommended": false}
+        ],
+        "advanced": [
+          {"tool": "ArchR", "version": "1.0.3", "language": "R", "purpose": "Full ATAC-seq analysis framework", "recommended": true},
+          {"tool": "SnapATAC2", "version": "2.6.0", "language": "Python", "purpose": "Single-cell ATAC + multiome", "recommended": true},
+          {"tool": "Signac", "version": "1.13.0", "language": "R", "purpose": "scATAC integrated with Seurat", "recommended": true}
+        ]
+      }
+    },
+    "immune_profiling": {
+      "name": "Immune Profiling",
+      "description": "TCR/BCR repertoire, HLA typing, immune deconvolution",
+      "stages": {
+        "repertoire_bulk": [
+          {"tool": "MiXCR", "version": "4.7.0", "purpose": "TCR/BCR from bulk RNA/DNA", "recommended": true, "notes": "Gold standard; free for academic use"},
+          {"tool": "TRUST4", "version": "1.1.0", "docker": "quay.io/biocontainers/trust4:1.1.0--h43eeafb_0", "purpose": "TCR/BCR from existing RNA-seq BAMs", "recommended": true, "notes": "Works without re-sequencing"},
+          {"tool": "Immcantation", "version": "4.4.0", "purpose": "SHM, clonal lineage trees", "recommended": true}
+        ],
+        "repertoire_singlecell": [
+          {"tool": "Cell Ranger VDJ", "version": "8.0", "purpose": "10x immune profiling", "recommended": true},
+          {"tool": "scRepertoire", "version": "2.1.0", "language": "R", "purpose": "VDJ + Seurat integration", "recommended": true},
+          {"tool": "VDJtools", "version": "1.2.1", "purpose": "Repertoire statistics", "recommended": true}
+        ],
+        "hla_typing": [
+          {"tool": "HLA-HD", "version": "1.7.0", "purpose": "HLA class I + II typing (most accurate)", "recommended": true},
+          {"tool": "OptiType", "version": "1.3.5", "docker": "quay.io/biocontainers/optitype:1.3.5--py27_0", "purpose": "HLA class I typing", "recommended": true, "notes": "Best for HLA class I only"},
+          {"tool": "xHLA", "version": "3.4.0", "purpose": "Fast HLA typing", "recommended": false}
+        ],
+        "deconvolution_bulk": [
+          {"tool": "CIBERSORT", "version": "1.06", "purpose": "22 immune cell types from bulk RNA-seq", "recommended": true, "notes": "Requires registration at cibersort.stanford.edu"},
+          {"tool": "TIMER2", "purpose": "6 immune cell types", "api": "http://timer.cistrome.org/", "recommended": true},
+          {"tool": "quanTIseq", "version": "1.0", "purpose": "10 immune cell types, absolute fractions", "recommended": true},
+          {"tool": "ESTIMATE", "version": "1.0.13", "language": "R", "purpose": "Immune + stromal scores", "recommended": true}
+        ],
+        "neoantigen_prediction": [
+          {"tool": "pVACtools", "version": "4.4.0", "docker": "griffithlab/pvactools:4.4.0", "purpose": "MHC-I/II neoantigen prediction", "recommended": true},
+          {"tool": "NetMHCpan", "version": "4.1", "purpose": "MHC-I binding prediction", "recommended": true}
+        ]
+      }
+    },
+    "ctdna": {
+      "name": "ctDNA / Cell-free DNA",
+      "description": "Liquid biopsy, circulating tumor DNA analysis",
+      "stages": {
+        "variant_calling": [
+          {"tool": "Mutect2", "version": "4.5.0", "docker": "broadinstitute/gatk:4.5.0.0", "recommended": true, "params": {"--min-allele-fraction": 0.005}},
+          {"tool": "VarDict", "version": "1.8.3", "docker": "quay.io/biocontainers/vardict-java:1.8.3--hdfd78af_0", "recommended": true, "notes": "Good sensitivity at low VAF"}
+        ],
+        "cnv_low_pass": [
+          {"tool": "ichorCNA", "version": "0.5.0", "language": "R", "purpose": "CNV from low-pass WGS (0.1-1x)", "recommended": true, "notes": "10-15x coverage works; estimates tumor fraction"},
+          {"tool": "AMBER + COBALT + PURPLE", "version": "4.0", "purpose": "Allele-specific CNV + purity", "recommended": true}
+        ],
+        "fragmentomics": [
+          {"tool": "Griffin", "version": "0.2.1", "language": "Python", "purpose": "Nucleosome positioning from cfDNA", "recommended": true},
+          {"tool": "DELFI", "version": "1.0", "purpose": "Fragment length + genome-wide signal", "recommended": true},
+          {"tool": "cfDNA Tools", "version": "1.0", "purpose": "Fragment size distribution", "recommended": true}
+        ],
+        "methylation_cfDNA": [
+          {"tool": "cfMeDIP-seq pipeline", "purpose": "Methylation from cfDNA enrichment", "recommended": true},
+          {"tool": "WGBS-tools", "purpose": "Whole-genome bisulfite from cfDNA", "recommended": false}
+        ],
+        "tumor_fraction": [
+          {"tool": "ichorCNA", "version": "0.5.0", "recommended": true},
+          {"tool": "CONIPHER", "purpose": "Clonal evolution from cfDNA", "recommended": false}
+        ]
+      }
+    },
+    "microbiome": {
+      "name": "Microbiome / Metagenomics",
+      "description": "16S amplicon, shotgun metagenomics, virome, mycobiome",
+      "stages": {
+        "amplicon_16S": [
+          {"tool": "QIIME2", "version": "2024.5", "docker": "quay.io/qiime2/amplicon:2024.5", "purpose": "End-to-end 16S pipeline", "recommended": true},
+          {"tool": "DADA2", "version": "1.30.0", "language": "R", "purpose": "ASV inference", "recommended": true, "notes": "Better resolution than OTU picking"}
+        ],
+        "taxonomy_shotgun": [
+          {"tool": "Kraken2", "version": "2.1.3", "docker": "quay.io/biocontainers/kraken2:2.1.3--pl5321h077b44d_0", "recommended": true, "notes": "Fast; requires large database (60-150 GB)"},
+          {"tool": "Bracken", "version": "2.9", "purpose": "Abundance re-estimation from Kraken2", "recommended": true},
+          {"tool": "MetaPhlAn4", "version": "4.1.0", "docker": "quay.io/biocontainers/metaphlan:4.1.0--pyhca03a8a_0", "recommended": true, "notes": "More accurate; strain-level; slower"}
+        ],
+        "functional_profiling": [
+          {"tool": "HUMAnN3", "version": "3.9", "docker": "quay.io/biocontainers/humann:3.9--pyh7cba7a3_0", "purpose": "Pathway + gene family abundance", "recommended": true},
+          {"tool": "eggNOG-mapper", "version": "2.1.12", "purpose": "Functional annotation", "recommended": true}
+        ],
+        "assembly_MAGs": [
+          {"tool": "MEGAHIT", "version": "1.2.9", "docker": "quay.io/biocontainers/megahit:1.2.9--h43eeafb_4", "purpose": "Fast metagenome assembly", "recommended": true},
+          {"tool": "SPAdes metaSPAdes", "version": "3.15.5", "purpose": "Accurate assembly (high RAM)", "recommended": false},
+          {"tool": "MetaBAT2", "version": "2.15.0", "docker": "quay.io/biocontainers/metabat2:2.15--h986a166_1", "purpose": "Contig binning → MAGs", "recommended": true},
+          {"tool": "CheckM2", "version": "1.0.2", "purpose": "MAG quality assessment", "recommended": true}
+        ],
+        "diversity": [
+          {"tool": "vegan", "version": "2.6.6", "language": "R", "purpose": "Alpha/beta diversity statistics", "recommended": true},
+          {"tool": "ANCOM-BC2", "version": "2.4.0", "language": "R", "purpose": "Differential abundance (compositionally aware)", "recommended": true},
+          {"tool": "LEfSe", "version": "1.1.2", "purpose": "Biomarker discovery", "recommended": false, "notes": "Compositional bias; prefer ANCOM-BC2"}
+        ],
+        "virome": [
+          {"tool": "VirSorter2", "version": "2.2.4", "docker": "quay.io/biocontainers/virsorter:2.2.4--pyhdfd78af_0", "recommended": true},
+          {"tool": "CheckV", "version": "1.0.1", "purpose": "Viral genome quality", "recommended": true}
+        ]
+      }
+    },
+    "riboseq": {
+      "name": "Ribo-seq",
+      "description": "Ribosome profiling — translational efficiency and novel ORF discovery",
+      "stages": {
+        "qc_preprocessing": [
+          {"tool": "FastQC", "version": "0.12.1", "recommended": true},
+          {"tool": "cutadapt", "version": "4.7", "docker": "quay.io/biocontainers/cutadapt:4.7--py310h4b81fae_1", "purpose": "Adapter removal for short reads", "recommended": true},
+          {"tool": "riboseQC", "version": "1.0.0", "language": "R", "purpose": "Ribo-seq specific QC (periodicity check)", "recommended": true}
+        ],
+        "alignment": [
+          {"tool": "STAR", "version": "2.7.11a", "recommended": true, "notes": "Map rRNA first, discard, then map RPFs"},
+          {"tool": "bowtie", "version": "1.3.1", "purpose": "rRNA depletion alignment", "recommended": true}
+        ],
+        "psite_analysis": [
+          {"tool": "RiboWaltz", "version": "1.2.0", "language": "R", "purpose": "P-site offset correction + codon occupancy", "recommended": true},
+          {"tool": "ribotricer", "version": "1.3.3", "language": "Python", "purpose": "Periodicity scoring", "recommended": true}
+        ],
+        "translation_efficiency": [
+          {"tool": "anota2seq", "version": "1.24.0", "language": "R", "purpose": "TE with paired RNA-seq", "recommended": true},
+          {"tool": "xtail", "version": "1.1.5", "language": "R", "recommended": false},
+          {"tool": "Babel", "version": "0.3.0", "language": "R", "recommended": false}
+        ],
+        "orf_discovery": [
+          {"tool": "ORFquant", "version": "1.5.0", "language": "R", "purpose": "Quantify known + novel ORFs", "recommended": true},
+          {"tool": "RiboTISH", "version": "0.2.7", "language": "Python", "purpose": "Novel ORF discovery + quality", "recommended": true},
+          {"tool": "riborf", "version": "1.0", "purpose": "ORF calling with statistical model", "recommended": false}
+        ]
+      }
+    },
+    "proteomics": {
+      "name": "Proteomics / Phosphoproteomics",
+      "description": "Mass spectrometry-based protein identification and quantification",
+      "stages": {
+        "dda_search": [
+          {"tool": "MaxQuant", "version": "2.6.3", "purpose": "DDA protein quantification (LFQ/TMT/SILAC)", "recommended": true, "notes": "Most widely used; free"},
+          {"tool": "MSFragger", "version": "4.1", "docker": "proteomicsunit/fragpipe:latest", "purpose": "Fast, open-search DDA", "recommended": true},
+          {"tool": "FragPipe", "version": "21.1", "purpose": "MSFragger GUI + workflow", "recommended": true}
+        ],
+        "dia_search": [
+          {"tool": "DIA-NN", "version": "1.9", "docker": "vdemichev/diann:1.9", "purpose": "DIA quantification (most accurate 2024)", "recommended": true},
+          {"tool": "Spectronaut", "version": "18.0", "purpose": "DIA quantification (commercial)", "recommended": false},
+          {"tool": "OpenSWATH", "version": "2.8.0", "purpose": "Open-source DIA", "recommended": false}
+        ],
+        "statistical_analysis": [
+          {"tool": "Perseus", "version": "2.0.11", "purpose": "Statistical analysis of MaxQuant output", "recommended": true},
+          {"tool": "limma", "version": "3.58.0", "language": "R", "purpose": "Differential protein expression", "recommended": true},
+          {"tool": "DEP", "version": "1.24.0", "language": "R", "purpose": "Proteomics differential expression pipeline", "recommended": true}
+        ],
+        "phosphoproteomics": [
+          {"tool": "PhosphoSitePlus", "purpose": "PTM site annotation", "api": "https://www.phosphosite.org/", "recommended": true},
+          {"tool": "PhosR", "version": "1.12.0", "language": "R", "purpose": "Phosphoproteomics analysis", "recommended": true},
+          {"tool": "KSEA App", "purpose": "Kinase activity from phospho data", "recommended": true}
+        ]
+      }
+    },
+    "spatial_transcriptomics": {
+      "name": "Spatial Transcriptomics",
+      "description": "Spatially-resolved gene expression (10x Visium, Xenium, Slide-seq, MERFISH)",
+      "stages": {
+        "alignment": [
+          {"tool": "SpaceRanger", "version": "3.1", "purpose": "10x Visium alignment + counting", "recommended": true, "notes": "Required for 10x Visium"},
+          {"tool": "Xenium Explorer", "purpose": "10x Xenium (sub-cellular)", "recommended": true}
+        ],
+        "analysis_python": [
+          {"tool": "Squidpy", "version": "1.6.0", "language": "Python", "docker": "quay.io/biocontainers/squidpy:1.6.0--pyhdfd78af_0", "purpose": "Spatial statistics, interaction analysis", "recommended": true},
+          {"tool": "Spateo", "version": "1.0.0", "language": "Python", "purpose": "3D spatial + velocity", "recommended": false}
+        ],
+        "analysis_r": [
+          {"tool": "BayesSpace", "version": "1.12.0", "language": "R", "purpose": "Spatial clustering", "recommended": true},
+          {"tool": "Seurat (spatial)", "version": "5.1.0", "language": "R", "recommended": true}
+        ],
+        "cell_type_deconvolution": [
+          {"tool": "RCTD", "version": "2.2.1", "language": "R", "purpose": "Cell type deconvolution", "recommended": true, "notes": "Fastest; developed at Broad"},
+          {"tool": "Tangram", "version": "1.0.4", "language": "Python", "purpose": "Map scRNA-seq onto spatial", "recommended": true},
+          {"tool": "Stereoscope", "version": "0.3.0", "language": "Python", "recommended": false}
+        ],
+        "spatially_variable_genes": [
+          {"tool": "SpatialDE", "version": "2.1.0", "language": "Python", "recommended": true},
+          {"tool": "SPARK-X", "version": "1.1.1", "language": "R", "recommended": true, "notes": "Scalable to large datasets"}
+        ],
+        "digital_pathology": [
+          {"tool": "QuPath", "version": "0.5.1", "purpose": "H&E image analysis, cell segmentation", "recommended": true},
+          {"tool": "CellViT", "version": "1.0", "purpose": "DL-based cell segmentation", "recommended": true},
+          {"tool": "PyRadiomics", "version": "3.1.0", "language": "Python", "purpose": "Radiomic feature extraction (MRI/CT/pathology)", "recommended": true}
+        ]
+      }
+    },
+    "multiomics": {
+      "name": "Multi-Omics Integration",
+      "description": "Integrate RNA, ATAC, methylation, protein, spatial data",
+      "stages": {
+        "unsupervised_integration": [
+          {"tool": "MOFA+", "version": "1.7.0", "language": "Python/R", "docker": "quay.io/biocontainers/r-mofapy2:0.7.2--pyhd24bf3b_0", "purpose": "Multi-omics factor analysis (handles missing data)", "recommended": true, "notes": "Best for discovery; handles missing modalities"},
+          {"tool": "MCIA", "version": "1.4.0", "language": "R", "purpose": "Multi-block dimensionality reduction", "recommended": false},
+          {"tool": "JIVE", "version": "2.0", "language": "R", "purpose": "Joint + individual variation", "recommended": false}
+        ],
+        "supervised_integration": [
+          {"tool": "DIABLO (mixOmics)", "version": "6.26.0", "language": "R", "purpose": "Supervised multi-block PLS", "recommended": true},
+          {"tool": "MOLI", "version": "1.0", "language": "Python", "purpose": "DL-based multi-omics integration", "recommended": false}
+        ],
+        "rna_atac": [
+          {"tool": "Seurat WNN", "version": "5.1.0", "language": "R", "purpose": "scRNA + scATAC joint embedding", "recommended": true},
+          {"tool": "ArchR", "version": "1.0.3", "language": "R", "purpose": "scATAC + gene score integration", "recommended": true},
+          {"tool": "SCENIC+", "version": "1.0.2", "language": "Python", "purpose": "Gene regulatory networks (RNA + ATAC)", "recommended": true},
+          {"tool": "MultiVelo", "version": "0.1.4", "language": "Python", "purpose": "RNA velocity + chromatin dynamics", "recommended": false}
+        ],
+        "cite_seq": [
+          {"tool": "Seurat DSB normalization", "version": "5.1.0", "purpose": "scRNA + protein (CITE-seq)", "recommended": true},
+          {"tool": "totalVI (scVI)", "version": "1.1.0", "language": "Python", "purpose": "Probabilistic CITE-seq integration", "recommended": true}
+        ],
+        "network_analysis": [
+          {"tool": "WGCNA", "version": "1.72.5", "language": "R", "purpose": "Weighted gene co-expression networks", "recommended": true},
+          {"tool": "iGraph", "version": "2.0.3", "language": "R/Python", "purpose": "Network topology analysis", "recommended": true}
+        ]
+      }
+    },
+    "dark_genome": {
+      "name": "Dark Genome / Repetitive Elements",
+      "description": "Transposable elements, repeats, centromeres, telomeres",
+      "stages": {
+        "te_expression": [
+          {"tool": "TEtranscripts", "version": "2.2.3", "docker": "quay.io/biocontainers/tetranscripts:2.2.3--pyh5e36f6f_0", "purpose": "TE expression from RNA-seq", "recommended": true},
+          {"tool": "SalmonTE", "version": "0.4", "language": "Python", "purpose": "Quantify TE transcripts", "recommended": true},
+          {"tool": "RepEnrich2", "version": "2.0", "language": "Python", "purpose": "TE expression enrichment", "recommended": false}
+        ],
+        "te_annotation": [
+          {"tool": "RepeatMasker", "version": "4.1.6", "docker": "dfam/tetools:1.88.5", "purpose": "Annotate repetitive elements", "recommended": true},
+          {"tool": "EDTA", "version": "2.1.0", "purpose": "TE annotation for new genomes", "recommended": true}
+        ],
+        "te_insertion": [
+          {"tool": "xTEA", "version": "0.1.9", "language": "Python", "purpose": "TE insertion calling from WGS", "recommended": true},
+          {"tool": "MELT", "version": "2.2.2", "purpose": "Mobile element insertion detection", "recommended": true}
+        ],
+        "telomere": [
+          {"tool": "TelomereHunter", "version": "1.1.0", "docker": "quay.io/biocontainers/telomerehunter:1.1.0--0", "purpose": "Telomere length from WGS", "recommended": true},
+          {"tool": "telseq", "version": "0.0.2", "purpose": "Telomere length estimation", "recommended": true}
+        ]
+      }
+    }
+  }
+}

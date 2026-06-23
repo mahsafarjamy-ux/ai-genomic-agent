@@ -1,0 +1,279 @@
+"""
+Spatial Transcriptomics pipeline
+Supports: 10x Visium, Visium HD, Slide-seq, MERFISH, seqFISH, Stereo-seq
+Stages: FASTQ alignment → spot/cell detection → QC → clustering → spatial DE → cell2location deconvolution
+Privacy: all analysis stays local; only article text reaches Claude API.
+"""
+
+import os
+configfile: "config.yaml"
+
+SAMPLES      = config["samples"]
+DATA_DIR     = config["data_dir"]
+RESULTS_DIR  = config["results_dir"]
+PLATFORM     = config.get("platform", "visium")          # visium | visiumhd | slideseq | merfish | stereoseq
+GENOME       = config["genome_fasta"]
+STAR_IDX     = config["star_index"]
+ANNOTATION   = config["annotation_gtf"]
+THREADS      = config.get("threads", 16)
+RAM_GB       = config.get("ram_gb", 64)
+SPECIES      = config.get("species", "human")
+# For deconvolution: path to a reference scRNA-seq Seurat/AnnData object
+SCRNA_REF    = config.get("scrna_reference", "")
+# For image-integrated analysis: path to H&E image per sample
+HE_IMAGE     = config.get("he_image", "")
+
+# ── VISIUM / VISIUM HD (10x Genomics) ──────────────────────────────────────
+
+rule all_visium:
+    """Entry rule for 10x Visium and Visium HD samples."""
+    input:
+        expand("{rd}/{sample}/outs/filtered_feature_bc_matrix.h5",
+               rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/{sample}/seurat/spatial_clusters.rds",
+               rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/{sample}/spatial_de/spatially_variable_genes.tsv",
+               rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/{sample}/deconvolution/cell2location_output.h5ad",
+               rd=RESULTS_DIR, sample=SAMPLES) if SCRNA_REF else [],
+        f"{RESULTS_DIR}/integrated/spatial_integrated.rds",
+
+rule spaceranger_count:
+    """
+    Space Ranger count: FASTQ → feature-barcode matrix with spatial coordinates.
+    For Visium HD use spaceranger count with --bin-sizes.
+    """
+    input:
+        fastq_dir=lambda wc: f"{DATA_DIR}/{wc.sample}/fastqs/",
+        image=lambda wc: config.get("he_images", {}).get(wc.sample, HE_IMAGE),
+    output:
+        matrix=f"{RESULTS_DIR}/{{sample}}/outs/filtered_feature_bc_matrix.h5",
+        spatial=directory(f"{RESULTS_DIR}/{{sample}}/outs/spatial/"),
+        bam=f"{RESULTS_DIR}/{{sample}}/outs/possorted_genome_bam.bam",
+    params:
+        slide=lambda wc: config.get("slide_ids", {}).get(wc.sample, ""),
+        area= lambda wc: config.get("capture_areas", {}).get(wc.sample, "A1"),
+        bin_sizes="002,008,016" if PLATFORM == "visiumhd" else "",
+    threads: THREADS
+    resources: mem_mb=RAM_GB * 1024
+    shell:
+        "spaceranger count "
+        "--id={wildcards.sample} "
+        "--transcriptome={STAR_IDX} "
+        "--fastqs={input.fastq_dir} "
+        "--image={input.image} "
+        "--slide={params.slide} "
+        "--area={params.area} "
+        + ("--bin-sizes={params.bin_sizes} " if PLATFORM == "visiumhd" else "") +
+        "--localcores={threads} "
+        "--localmem={RAM_GB} "
+        "--output-dir={RESULTS_DIR}/{wildcards.sample}"
+
+rule seurat_qc_cluster:
+    """
+    Seurat 5 + Giotto: QC, normalisation (SCTransform), PCA, UMAP,
+    Leiden clustering, and spatial plots.
+    """
+    input:  matrix=rules.spaceranger_count.output.matrix
+    output: rds=f"{RESULTS_DIR}/{{sample}}/seurat/spatial_clusters.rds",
+            umap_png=f"{RESULTS_DIR}/{{sample}}/seurat/umap.png",
+            spatial_png=f"{RESULTS_DIR}/{{sample}}/seurat/spatial_clusters.png"
+    threads: THREADS
+    resources: mem_mb=RAM_GB * 1024
+    shell:
+        "Rscript - <<'REOF'\n"
+        "library(Seurat)\n"
+        "library(ggplot2)\n"
+        "library(patchwork)\n"
+        "options(Seurat.object.assay.version='v5')\n"
+        "\n"
+        "obj <- Load10X_Spatial('{RESULTS_DIR}/{wildcards.sample}/outs/')\n"
+        "obj <- PercentageFeatureSet(obj, pattern='^MT-', col.name='percent.mt')\n"
+        "\n"
+        "# QC filters\n"
+        "obj <- subset(obj, nFeature_Spatial > 200 & percent.mt < 25)\n"
+        "\n"
+        "# Normalise\n"
+        "obj <- SCTransform(obj, assay='Spatial', vars.to.regress='percent.mt',\n"
+        "                   verbose=FALSE)\n"
+        "\n"
+        "# Dimensionality reduction\n"
+        "obj <- RunPCA(obj, assay='SCT', verbose=FALSE)\n"
+        "obj <- FindNeighbors(obj, reduction='pca', dims=1:30)\n"
+        "obj <- FindClusters(obj, verbose=FALSE, resolution=0.5)\n"
+        "obj <- RunUMAP(obj, reduction='pca', dims=1:30)\n"
+        "\n"
+        "# Save\n"
+        "dir.create('{RESULTS_DIR}/{wildcards.sample}/seurat', showWarnings=FALSE)\n"
+        "saveRDS(obj, '{output.rds}')\n"
+        "\n"
+        "# Plots\n"
+        "p1 <- DimPlot(obj, reduction='umap', label=TRUE) + NoLegend()\n"
+        "ggsave('{output.umap_png}', p1, width=8, height=6, dpi=150)\n"
+        "p2 <- SpatialDimPlot(obj, label=TRUE, label.size=3)\n"
+        "ggsave('{output.spatial_png}', p2, width=8, height=8, dpi=150)\n"
+        "REOF"
+
+rule spatially_variable_genes:
+    """
+    Identify spatially variable genes (SVGs) using SPARK-X and SpatialDE2.
+    SPARK-X: fast non-parametric SVG test.
+    """
+    input:  rds=rules.seurat_qc_cluster.output.rds
+    output: svg_tsv=f"{RESULTS_DIR}/{{sample}}/spatial_de/spatially_variable_genes.tsv",
+            svg_plot=f"{RESULTS_DIR}/{{sample}}/spatial_de/top20_svg.png"
+    threads: THREADS
+    shell:
+        "Rscript - <<'REOF'\n"
+        "library(Seurat)\n"
+        "library(SPARK)\n"
+        "library(ggplot2)\n"
+        "\n"
+        "obj <- readRDS('{input.rds}')\n"
+        "\n"
+        "# Extract SCT counts and spatial coordinates\n"
+        "counts   <- GetAssayData(obj, assay='SCT', slot='counts')\n"
+        "coords   <- GetTissueCoordinates(obj)[, c('imagerow','imagecol')]\n"
+        "\n"
+        "# SPARK-X\n"
+        "sparkx_res <- sparkx(counts, coords, numCores={THREADS}, option='mixture')\n"
+        "svg_df <- sparkx_res$res_mtest\n"
+        "svg_df <- svg_df[order(svg_df$adjustedPval), ]\n"
+        "write.table(svg_df, '{output.svg_tsv}', sep='\\t', quote=FALSE)\n"
+        "\n"
+        "# Plot top 20 SVGs spatially\n"
+        "top_genes <- rownames(svg_df)[1:min(20, nrow(svg_df))]\n"
+        "DefaultAssay(obj) <- 'SCT'\n"
+        "p <- SpatialFeaturePlot(obj, features=top_genes[1:4], ncol=2)\n"
+        "ggsave('{output.svg_plot}', p, width=12, height=10, dpi=150)\n"
+        "REOF"
+
+rule cell2location_deconvolution:
+    """
+    cell2location: deconvolve each spot into cell-type proportions
+    using a reference scRNA-seq signature matrix.
+    Requires SCRNA_REF (h5ad with cell-type annotations in obs['celltype']).
+    """
+    input:
+        spatial=f"{RESULTS_DIR}/{{sample}}/outs/filtered_feature_bc_matrix.h5",
+        scrna_ref=SCRNA_REF,
+    output: h5ad=f"{RESULTS_DIR}/{{sample}}/deconvolution/cell2location_output.h5ad",
+            plot=f"{RESULTS_DIR}/{{sample}}/deconvolution/cell2location_map.png"
+    threads: THREADS
+    resources: mem_mb=RAM_GB * 1024
+    shell:
+        "python3 - <<'PYEOF'\n"
+        "import cell2location\n"
+        "import scanpy as sc\n"
+        "import numpy as np\n"
+        "import matplotlib.pyplot as plt\n"
+        "\n"
+        "# Load reference single-cell RNA-seq\n"
+        "adata_ref = sc.read_h5ad('{input.scrna_ref}')\n"
+        "\n"
+        "# Load spatial data\n"
+        "adata_vis = sc.read_10x_h5('{input.spatial}')\n"
+        "\n"
+        "# QC\n"
+        "sc.pp.filter_genes(adata_ref, min_cells=3)\n"
+        "sc.pp.normalize_total(adata_ref)\n"
+        "sc.pp.log1p(adata_ref)\n"
+        "\n"
+        "# Intersect genes\n"
+        "shared_genes = list(set(adata_ref.var_names) & set(adata_vis.var_names))\n"
+        "adata_ref = adata_ref[:, shared_genes]\n"
+        "adata_vis = adata_vis[:, shared_genes]\n"
+        "\n"
+        "# cell2location NB regression model for reference signatures\n"
+        "from cell2location.models import RegressionModel\n"
+        "RegressionModel.setup_anndata(adata_ref, labels_key='celltype')\n"
+        "mod = RegressionModel(adata_ref)\n"
+        "mod.train(max_epochs=250)\n"
+        "adata_ref = mod.export_posterior(adata_ref, sample_kwargs={'num_samples':1000})\n"
+        "inf_aver = adata_ref.varm['means_per_cluster_mu_fg']\n"
+        "\n"
+        "# Spatial mapping\n"
+        "from cell2location.models import Cell2location\n"
+        "Cell2location.setup_anndata(adata_vis)\n"
+        "mod_vis = Cell2location(\n"
+        "    adata_vis, cell_state_df=inf_aver,\n"
+        "    N_cells_per_location=30,\n"
+        "    detection_alpha=20,\n"
+        ")\n"
+        "mod_vis.train(max_epochs=30000, batch_size=None)\n"
+        "adata_vis = mod_vis.export_posterior(\n"
+        "    adata_vis,\n"
+        "    sample_kwargs={'num_samples': 1000, 'batch_size': mod_vis.adata.n_obs}\n"
+        ")\n"
+        "adata_vis.write('{output.h5ad}')\n"
+        "\n"
+        "# Plot cell-type proportions\n"
+        "fig, axes = plt.subplots(1, 1, figsize=(10, 10))\n"
+        "adata_vis.obs[adata_vis.uns.get('mod', {}).get('factor_names', [][:4])] \\\n"
+        "    .plot.bar(ax=axes, stacked=True)\n"
+        "plt.tight_layout()\n"
+        "plt.savefig('{output.plot}', dpi=150)\n"
+        "PYEOF"
+
+rule integrate_samples:
+    """
+    Harmony integration across multiple Visium sections / patients.
+    Produces a single integrated SpatialSeurat object for cross-sample analysis.
+    """
+    input:
+        rdss=expand("{rd}/{sample}/seurat/spatial_clusters.rds",
+                    rd=RESULTS_DIR, sample=SAMPLES)
+    output: rds=f"{RESULTS_DIR}/integrated/spatial_integrated.rds",
+            umap=f"{RESULTS_DIR}/integrated/integrated_umap.png"
+    threads: THREADS
+    resources: mem_mb=RAM_GB * 1024
+    shell:
+        "Rscript - <<'REOF'\n"
+        "library(Seurat)\n"
+        "library(harmony)\n"
+        "library(ggplot2)\n"
+        "\n"
+        "rds_paths <- strsplit('{input.rdss}', ' ')[[1]]\n"
+        "obj_list <- lapply(rds_paths, readRDS)\n"
+        "names(obj_list) <- '{SAMPLES}'.split()\n"
+        "\n"
+        "# Merge all sections\n"
+        "merged <- merge(obj_list[[1]], y=obj_list[-1],\n"
+        "                add.cell.ids=names(obj_list), merge.data=TRUE)\n"
+        "\n"
+        "# Joint PCA on SCT\n"
+        "VariableFeatures(merged) <- SelectIntegrationFeatures(obj_list, nfeatures=3000)\n"
+        "merged <- ScaleData(merged, features=VariableFeatures(merged))\n"
+        "merged <- RunPCA(merged, features=VariableFeatures(merged), verbose=FALSE)\n"
+        "\n"
+        "# Harmony batch correction (batch = sample)\n"
+        "merged <- RunHarmony(merged, group.by.vars='orig.ident',\n"
+        "                     assay.use='SCT', reduction='pca')\n"
+        "merged <- FindNeighbors(merged, reduction='harmony', dims=1:30)\n"
+        "merged <- FindClusters(merged, resolution=0.5, verbose=FALSE)\n"
+        "merged <- RunUMAP(merged, reduction='harmony', dims=1:30)\n"
+        "\n"
+        "dir.create('{RESULTS_DIR}/integrated', showWarnings=FALSE)\n"
+        "saveRDS(merged, '{output.rds}')\n"
+        "p <- DimPlot(merged, group.by=c('orig.ident','seurat_clusters'), ncol=2)\n"
+        "ggsave('{output.umap}', p, width=14, height=6, dpi=150)\n"
+        "REOF"
+
+# ── SLIDE-SEQ V2 (alternative entry) ───────────────────────────────────────
+
+rule slideseq_align:
+    """Slide-seq uses Drop-seq tools for bead barcode matching → digital expression matrix."""
+    input:  fastq1=lambda wc: f"{DATA_DIR}/{wc.sample}_R1.fastq.gz",
+            fastq2=lambda wc: f"{DATA_DIR}/{wc.sample}_R2.fastq.gz"
+    output: dge=f"{RESULTS_DIR}/{{sample}}/slideseq_dge.txt.gz"
+    threads: THREADS
+    run:
+        if PLATFORM != "slideseq":
+            shell("echo 'Not a Slide-seq run; skipping' > {output.dge}")
+        else:
+            shell(
+                "Drop-seq_tools/Drop-seq_alignment.sh "
+                "-g {GENOME} -r {ANNOTATION} "
+                "-d {DATA_DIR} -o {RESULTS_DIR}/{wildcards.sample} "
+                "-s {wildcards.sample} -n {THREADS}"
+            )

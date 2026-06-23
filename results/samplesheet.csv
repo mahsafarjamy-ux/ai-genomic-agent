@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2,strandedness
+sample1,/Users/User/Documents/ai-genomic-agent/test-data/rnaseq/sample1_R1.fastq.gz,/Users/User/Documents/ai-genomic-agent/test-data/rnaseq/sample1_R2.fastq.gz,auto

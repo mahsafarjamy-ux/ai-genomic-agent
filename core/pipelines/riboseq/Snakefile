@@ -1,0 +1,214 @@
+"""
+Ribo-seq pipeline: ribosome profiling + RNA-seq co-analysis
+Tracks: QC → adapter trim → rRNA depletion → alignment → P-site offset → ORF discovery → translation efficiency
+Privacy: processes data locally, nothing uploaded.
+"""
+
+import os
+configfile: "config.yaml"
+
+SAMPLES     = config["samples"]
+DATA_DIR    = config["data_dir"]
+RESULTS_DIR = config["results_dir"]
+GENOME      = config["genome_fasta"]
+GENOME_IDX  = config["star_index"]
+ANNOTATION  = config["annotation_gtf"]
+RRNA_DB     = config.get("rrna_bowtie2_index", "")   # bowtie2 index of rRNA seqs
+THREADS     = config.get("threads", 16)
+RAM_GB      = config.get("ram_gb", 64)
+HAS_RNASEQ  = config.get("has_rnaseq_pairs", False)  # paired RNA-seq for TE calculation
+
+# Ribo-seq reads are typically 25-35 nt after adapter trimming
+FRAGMENT_LEN_MIN = config.get("fragment_len_min", 25)
+FRAGMENT_LEN_MAX = config.get("fragment_len_max", 35)
+
+rule all:
+    input:
+        # P-site coverage bigwigs
+        expand("{rd}/psite/{sample}_psite.bw", rd=RESULTS_DIR, sample=SAMPLES),
+        # ORF predictions
+        expand("{rd}/orfs/{sample}_ORFs.txt", rd=RESULTS_DIR, sample=SAMPLES),
+        # Translation efficiency (only if RNA-seq is available)
+        *([expand("{rd}/te/{sample}_TE.tsv", rd=RESULTS_DIR, sample=SAMPLES)] if HAS_RNASEQ else []),
+        # MultiQC report
+        f"{RESULTS_DIR}/multiqc/multiqc_report.html",
+
+rule fastqc_raw:
+    input:  fq=lambda wc: f"{DATA_DIR}/{wc.sample}_R1.fastq.gz"
+    output: html=f"{RESULTS_DIR}/qc/{{sample}}_raw_fastqc.html",
+            zip= f"{RESULTS_DIR}/qc/{{sample}}_raw_fastqc.zip"
+    threads: 2
+    shell:
+        "fastqc {input.fq} -o {RESULTS_DIR}/qc/ -t {threads}"
+
+rule trim_adapters:
+    """Remove adapters; Ribo-seq is single-end, typically 50-75 nt raw reads."""
+    input:  fq=lambda wc: f"{DATA_DIR}/{wc.sample}_R1.fastq.gz"
+    output: fq=f"{RESULTS_DIR}/trimmed/{{sample}}.fastq.gz",
+            report=f"{RESULTS_DIR}/trimmed/{{sample}}_trimming_report.txt"
+    threads: 4
+    shell:
+        "trim_galore --cores {threads} "
+        "--adapter CTGTAGGCACCATCAAT "   # common Ribo-seq 3' adapter
+        "--length {FRAGMENT_LEN_MIN} "
+        "-o {RESULTS_DIR}/trimmed/ {input.fq} "
+        "&& mv {RESULTS_DIR}/trimmed/{wildcards.sample}_R1_trimmed.fq.gz {output.fq}"
+
+rule deplete_rrna:
+    """Map to rRNA reference with bowtie2; keep unmapped reads (true RPFs)."""
+    input:  fq=rules.trim_adapters.output.fq
+    output: fq=f"{RESULTS_DIR}/depleted/{{sample}}_norRNA.fastq.gz",
+            log=f"{RESULTS_DIR}/depleted/{{sample}}_rrna_depletion.log"
+    threads: THREADS
+    shell:
+        "bowtie2 -x {RRNA_DB} -U {input.fq} "
+        "--no-unal --threads {threads} "
+        "--un-gz {output.fq} "
+        "-S /dev/null 2>{output.log}" if RRNA_DB else
+        "cp {input.fq} {output.fq} && echo 'No rRNA DB — skipped depletion' >{output.log}"
+
+rule align_star:
+    """STAR alignment; output sorted BAM + unmapped for stats."""
+    input:  fq=rules.deplete_rrna.output.fq
+    output: bam=f"{RESULTS_DIR}/aligned/{{sample}}/Aligned.sortedByCoord.out.bam",
+            log=f"{RESULTS_DIR}/aligned/{{sample}}/Log.final.out"
+    params: prefix=f"{RESULTS_DIR}/aligned/{{sample}}/"
+    threads: THREADS
+    resources: mem_mb=RAM_GB * 1024
+    shell:
+        "STAR --runThreadN {threads} "
+        "--genomeDir {GENOME_IDX} "
+        "--readFilesIn {input.fq} "
+        "--readFilesCommand zcat "
+        "--outSAMtype BAM SortedByCoordinate "
+        "--outSAMattributes NH HI NM MD AS "
+        "--outFilterMismatchNmax 2 "
+        "--outFilterMultimapNmax 1 "           # multimappers confuse P-site; discard
+        "--alignSJoverhangMin 8 "
+        "--alignEndsType EndToEnd "            # no soft clipping for Ribo-seq
+        "--outFileNamePrefix {params.prefix} "
+        "--quantMode TranscriptomeSAM "        # for downstream counting
+        "&& samtools index {output.bam}"
+
+rule filter_fragment_length:
+    """Keep only reads in the expected RPF size window (25-35 nt)."""
+    input:  bam=rules.align_star.output.bam
+    output: bam=f"{RESULTS_DIR}/filtered/{{sample}}_filtered.bam",
+            bai=f"{RESULTS_DIR}/filtered/{{sample}}_filtered.bam.bai"
+    threads: 4
+    shell:
+        "samtools view -h {input.bam} "
+        "| awk 'substr($1,1,1)==\"@\" || (length($10)>={FRAGMENT_LEN_MIN} && length($10)<={FRAGMENT_LEN_MAX})' "
+        "| samtools sort -@ {threads} -o {output.bam} && samtools index {output.bam}"
+
+rule compute_psite_offset:
+    """
+    RiboWaltz: compute P-site offsets per read length.
+    Outputs offset table used to shift reads to ribosome A-site.
+    """
+    input:  bam=rules.filter_fragment_length.output.bam
+    output: offset_table=f"{RESULTS_DIR}/psite/{{sample}}_offsets.rds",
+            psite_bam=f"{RESULTS_DIR}/psite/{{sample}}_psite.bam"
+    threads: 4
+    shell:
+        "Rscript - <<'REOF'\n"
+        "library(riboWaltz)\n"
+        "bam_list <- list(sample='{input.bam}')\n"
+        "reads_list <- bamtolist(bamfolder=dirname('{input.bam}'), annotation='{ANNOTATION}')\n"
+        "psite_offset <- psite(reads_list, plot=FALSE)\n"
+        "saveRDS(psite_offset, '{output.offset_table}')\n"
+        "reads_psite <- psite_info(reads_list, psite_offset)\n"
+        "# Write P-site shifted BAM\n"
+        "create_psite_bam(reads_psite, output='{output.psite_bam}')\n"
+        "REOF"
+
+rule psite_bigwig:
+    """Convert P-site BAM to strand-specific BigWigs for IGV/visualization."""
+    input:  bam=rules.compute_psite_offset.output.psite_bam
+    output: fwd=f"{RESULTS_DIR}/psite/{{sample}}_psite.bw",
+            rev=f"{RESULTS_DIR}/psite/{{sample}}_psite_rev.bw"
+    threads: 4
+    shell:
+        "bamCoverage -b {input.bam} -o {output.fwd} "
+        "--filterRNAstrand forward --normalizeUsing CPM "
+        "--binSize 1 -p {threads} && "
+        "bamCoverage -b {input.bam} -o {output.rev} "
+        "--filterRNAstrand reverse --normalizeUsing CPM "
+        "--binSize 1 -p {threads}"
+
+rule orf_discovery:
+    """
+    RibORF / ORFscore: identify translated ORFs including uORFs, dORFs, ncORF.
+    Uses 3-nt periodicity as the signature of ribosome-protected footprints.
+    """
+    input:  bam=rules.compute_psite_offset.output.psite_bam,
+            offset=rules.compute_psite_offset.output.offset_table
+    output: orfs=f"{RESULTS_DIR}/orfs/{{sample}}_ORFs.txt",
+            periodicity=f"{RESULTS_DIR}/orfs/{{sample}}_periodicity.pdf"
+    threads: THREADS
+    shell:
+        "Rscript - <<'REOF'\n"
+        "library(riboWaltz)\n"
+        "library(data.table)\n"
+        "psite_offset <- readRDS('{input.offset}')\n"
+        "reads_list <- bamtolist(bamfolder=dirname('{input.bam}'), annotation='{ANNOTATION}')\n"
+        "reads_psite <- psite_info(reads_list, psite_offset)\n"
+        "# 3-nt periodicity check\n"
+        "pdf('{output.periodicity}')\n"
+        "frame_psite(reads_psite[['sample']], sample='sample', region='cds')\n"
+        "dev.off()\n"
+        "# ORF scores\n"
+        "orf_table <- orf_score(reads_psite, annotation='{ANNOTATION}', methods=c('pvalue'))\n"
+        "fwrite(orf_table, '{output.orfs}', sep='\\t')\n"
+        "REOF"
+
+rule count_riboseq:
+    """featureCounts on Ribo-seq BAM for total RPF counts per gene."""
+    input:  bam=rules.filter_fragment_length.output.bam
+    output: counts=f"{RESULTS_DIR}/counts/{{sample}}_ribo_counts.txt",
+            summary=f"{RESULTS_DIR}/counts/{{sample}}_ribo_counts.txt.summary"
+    threads: 4
+    shell:
+        "featureCounts -T {threads} -s 1 "
+        "-a {ANNOTATION} -o {output.counts} {input.bam}"
+
+rule translation_efficiency:
+    """
+    Compute translation efficiency (TE = RPF FPKM / mRNA FPKM).
+    Requires matched RNA-seq FPKM matrix in config['rnaseq_fpkm'].
+    """
+    input:  ribo_counts=rules.count_riboseq.output.counts
+    output: te=f"{RESULTS_DIR}/te/{{sample}}_TE.tsv"
+    params: rnaseq_fpkm=config.get("rnaseq_fpkm_matrix", "")
+    run:
+        if not HAS_RNASEQ or not params.rnaseq_fpkm:
+            shell("echo 'No RNA-seq FPKM provided; TE skipped' > {output.te}")
+        else:
+            shell(
+                "Rscript - <<'REOF'\n"
+                "library(data.table)\n"
+                "ribo <- fread('{input.ribo_counts}', skip=1)\n"
+                "rnaseq <- fread('{params.rnaseq_fpkm}')\n"
+                "# Merge on gene ID\n"
+                "merged <- merge(ribo[, .(Geneid, ribo_count='{wildcards.sample}')], "
+                "                rnaseq[, .(Geneid, rna_fpkm='{wildcards.sample}')], "
+                "                by='Geneid')\n"
+                "merged[, ribo_count := as.numeric(ribo_count)]\n"
+                "merged[, rna_fpkm   := as.numeric(rna_fpkm)]\n"
+                "# RPF FPKM\n"
+                "ribo_total <- sum(merged$ribo_count, na.rm=TRUE)\n"
+                "merged[, ribo_fpkm := ribo_count / (ribo_total / 1e6)]\n"
+                "merged[, TE := ifelse(rna_fpkm > 1, ribo_fpkm / rna_fpkm, NA_real_)]\n"
+                "fwrite(merged, '{output.te}', sep='\\t')\n"
+                "REOF"
+            )
+
+rule multiqc:
+    input:
+        expand("{rd}/qc/{sample}_raw_fastqc.html", rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/trimmed/{sample}_trimming_report.txt", rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/aligned/{sample}/Log.final.out", rd=RESULTS_DIR, sample=SAMPLES),
+        expand("{rd}/counts/{sample}_ribo_counts.txt.summary", rd=RESULTS_DIR, sample=SAMPLES),
+    output: f"{RESULTS_DIR}/multiqc/multiqc_report.html"
+    shell:
+        "multiqc {RESULTS_DIR} -o {RESULTS_DIR}/multiqc/ --force"

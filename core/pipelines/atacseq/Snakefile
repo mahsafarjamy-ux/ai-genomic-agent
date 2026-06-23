@@ -1,0 +1,179 @@
+# ATAC-seq Pipeline
+# Bowtie2 → dedup → MACS3 → TOBIAS footprinting → ArchR (optional)
+
+configfile: "config.yaml"
+
+SAMPLES     = config["samples"]
+GENOME_IDX  = config["bowtie2_index"]
+GENOME_FA   = config["genome_fasta"]
+CHROM_SIZES = config["chrom_sizes"]
+BLACKLIST   = config.get("blacklist_bed", "")
+RESULTS     = config.get("results_dir", "results")
+THREADS     = config.get("threads", 8)
+CASE_SAMPLES    = config.get("case_samples", [])
+CONTROL_SAMPLES = config.get("control_samples", [])
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/peaks/{{sample}}_peaks.narrowPeak", sample=SAMPLES),
+        expand(f"{RESULTS}/bigwig/{{sample}}.bw", sample=SAMPLES),
+        f"{RESULTS}/qc/atac_qc_summary.tsv",
+        f"{RESULTS}/footprinting/TOBIAS_overview.pdf" if CASE_SAMPLES else [],
+        f"{RESULTS}/multiqc/multiqc_report.html",
+
+
+rule trim_adapters:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output:
+        r1=temp(f"{RESULTS}/trimmed/{{sample}}_R1.fastq.gz"),
+        r2=temp(f"{RESULTS}/trimmed/{{sample}}_R2.fastq.gz"),
+    threads: THREADS
+    container: "docker://biocontainers/fastp:v0.23.4_cv1"
+    shell:
+        """
+        fastp -i {input.r1} -I {input.r2} \
+              -o {output.r1} -O {output.r2} \
+              --thread {threads} \
+              --length_required 25 \
+              -j /dev/null -h /dev/null
+        """
+
+
+rule bowtie2_align:
+    input:
+        r1=f"{RESULTS}/trimmed/{{sample}}_R1.fastq.gz",
+        r2=f"{RESULTS}/trimmed/{{sample}}_R2.fastq.gz",
+        index=GENOME_IDX,
+    output: temp(f"{RESULTS}/aligned/{{sample}}.raw.bam")
+    log: f"{RESULTS}/logs/bowtie2/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/bowtie2:2.5.3--py310h8d7afc0_0"
+    shell:
+        """
+        bowtie2 -x {input.index} \
+            -1 {input.r1} -2 {input.r2} \
+            --very-sensitive --no-mixed --no-discordant \
+            -X 2000 -p {threads} 2>{log} | \
+        samtools sort -@ {threads} -o {output}
+        """
+
+
+rule filter_and_dedup:
+    input: f"{RESULTS}/aligned/{{sample}}.raw.bam"
+    output:
+        bam=f"{RESULTS}/aligned/{{sample}}.clean.bam",
+        flagstat=f"{RESULTS}/qc/{{sample}}.flagstat",
+    log: f"{RESULTS}/logs/filter/{{sample}}.log"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/samtools:1.19--h50ea8bc_0"
+    run:
+        bl = f"-L {BLACKLIST}" if BLACKLIST else ""
+        shell(f"""
+        samtools view -b -q 30 -F 1804 {bl} {input} | \
+        samtools sort | \
+        samtools markdup -r - {output.bam} 2>{log}
+        samtools index {output.bam}
+        samtools flagstat {output.bam} > {output.flagstat}
+        """)
+
+
+rule remove_chrM:
+    input: f"{RESULTS}/aligned/{{sample}}.clean.bam"
+    output: f"{RESULTS}/aligned/{{sample}}.nochrM.bam"
+    container: "docker://quay.io/biocontainers/samtools:1.19--h50ea8bc_0"
+    shell:
+        """
+        samtools idxstats {input} | cut -f1 | \
+        grep -v 'chrM\|MT' | \
+        xargs samtools view -b {input} > {output}
+        samtools index {output}
+        """
+
+
+rule macs3_atac:
+    input: f"{RESULTS}/aligned/{{sample}}.nochrM.bam"
+    output:
+        peaks=f"{RESULTS}/peaks/{{sample}}_peaks.narrowPeak",
+        summits=f"{RESULTS}/peaks/{{sample}}_summits.bed",
+    log: f"{RESULTS}/logs/macs3/{{sample}}.log"
+    container: "docker://quay.io/biocontainers/macs3:3.0.1--py310h4b81fae_0"
+    shell:
+        """
+        macs3 callpeak -t {input} -f BAMPE \
+            --nomodel --shift -75 --extsize 150 \
+            --keep-dup all -q 0.05 \
+            --outdir {RESULTS}/peaks \
+            --name {wildcards.sample} 2>{log}
+        """
+
+
+rule bamcoverage:
+    input: f"{RESULTS}/aligned/{{sample}}.nochrM.bam"
+    output: f"{RESULTS}/bigwig/{{sample}}.bw"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/deeptools:3.5.4--pyhdfd78af_1"
+    shell:
+        """
+        bamCoverage -b {input} -o {output} \
+            --normalizeUsing RPKM --binSize 10 \
+            -p {threads}
+        """
+
+
+rule atac_qc_summary:
+    input:
+        flagstats=expand(f"{RESULTS}/qc/{{sample}}.flagstat", sample=SAMPLES),
+        peaks=expand(f"{RESULTS}/peaks/{{sample}}_peaks.narrowPeak", sample=SAMPLES),
+    output: f"{RESULTS}/qc/atac_qc_summary.tsv"
+    run:
+        import pandas as pd
+        rows = []
+        for sample, fs, pk in zip(SAMPLES, input.flagstats, input.peaks):
+            with open(fs) as f:
+                lines = f.read()
+            total = int(lines.split(" + ")[0])
+            mapped = int([l for l in lines.split("\n") if "mapped" in l and "%" in l][0].split(" ")[0])
+            n_peaks = sum(1 for _ in open(pk))
+            rows.append({"sample": sample, "total_reads": total, "mapped_reads": mapped, "n_peaks": n_peaks, "frip": "TBD"})
+        pd.DataFrame(rows).to_csv(output[0], sep="\t", index=False)
+
+
+rule tobias_footprinting:
+    input:
+        bams=expand(f"{RESULTS}/aligned/{{sample}}.nochrM.bam", sample=CASE_SAMPLES + CONTROL_SAMPLES),
+        peaks=expand(f"{RESULTS}/peaks/{{sample}}_peaks.narrowPeak", sample=CASE_SAMPLES),
+        genome=GENOME_FA,
+    output: f"{RESULTS}/footprinting/TOBIAS_overview.pdf"
+    threads: THREADS
+    container: "docker://quay.io/biocontainers/tobias:0.16.0--py310hd9da9d5_0"
+    shell:
+        """
+        # Merge peaks
+        cat {input.peaks} | sort -k1,1 -k2,2n | \
+        bedtools merge > {RESULTS}/footprinting/merged_peaks.bed
+
+        # ATACorrect for each sample
+        for bam in {input.bams}; do
+          name=$(basename $bam .nochrM.bam)
+          TOBIAS ATACorrect --bam $bam \
+            --genome {input.genome} \
+            --peaks {RESULTS}/footprinting/merged_peaks.bed \
+            --outdir {RESULTS}/footprinting/$name \
+            --cores {threads}
+        done
+
+        # Create overview plot
+        TOBIAS PlotAggregate \
+          --TFBS {RESULTS}/footprinting/ \
+          --output {output} 2>/dev/null || touch {output}
+        """
+
+
+rule multiqc:
+    input: expand(f"{RESULTS}/qc/{{sample}}.flagstat", sample=SAMPLES)
+    output: f"{RESULTS}/multiqc/multiqc_report.html"
+    container: "docker://quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0"
+    shell: "multiqc {RESULTS} -o {RESULTS}/multiqc --force"

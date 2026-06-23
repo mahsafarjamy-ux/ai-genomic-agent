@@ -1,0 +1,193 @@
+# Whole Genome Sequencing (WGS) pipeline
+# GATK4 best-practice germline variant calling
+# Mirrors GATK4 BWA-mem2 → BQSR → HaplotypeCaller → VQSR workflow
+
+configfile: "config.yaml"
+
+SAMPLES = config["samples"]
+GENOME = config["genome_fasta"]
+DBSNP = config["dbsnp_vcf"]
+MILLS = config["mills_vcf"]
+G1000 = config["g1000_vcf"]
+GNOMAD = config.get("gnomad_vcf", "")
+RESULTS = config.get("results_dir", "results")
+THREADS = config.get("threads", 16)
+MEMORY = config.get("memory_gb", 64)
+INTERVALS = config.get("intervals", "")
+
+
+rule all:
+    input:
+        expand(f"{RESULTS}/fastqc/{{sample}}_fastqc.html", sample=SAMPLES),
+        expand(f"{RESULTS}/bqsr/{{sample}}.bqsr.bam", sample=SAMPLES),
+        expand(f"{RESULTS}/gvcf/{{sample}}.g.vcf.gz", sample=SAMPLES),
+        f"{RESULTS}/genotyped/joint_genotyped.vcf.gz",
+        f"{RESULTS}/vqsr/filtered.vcf.gz",
+        f"{RESULTS}/multiqc/multiqc_report.html",
+
+
+rule fastqc_raw:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+    output:
+        html=f"{RESULTS}/fastqc/{{sample}}_fastqc.html",
+    log: f"{RESULTS}/logs/fastqc/{{sample}}.log"
+    threads: 4
+    container: "docker://biocontainers/fastqc:v0.11.9_cv8"
+    shell: "fastqc {input.r1} {input.r2} -o {RESULTS}/fastqc -t {threads} 2>{log}"
+
+
+rule bwa_mem2_align:
+    input:
+        r1=lambda wc: config["fastq"][wc.sample]["R1"],
+        r2=lambda wc: config["fastq"][wc.sample]["R2"],
+        ref=GENOME,
+    output:
+        bam=temp(f"{RESULTS}/aligned/{{sample}}.bam"),
+    log: f"{RESULTS}/logs/bwa/{{sample}}.log"
+    threads: THREADS
+    resources: mem_mb=MEMORY * 1024
+    container: "docker://quay.io/biocontainers/bwa-mem2:2.2.1--hd03093a_5"
+    shell:
+        """
+        bwa-mem2 mem -t {threads} \
+            -R "@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}\\tPL:ILLUMINA\\tLB:lib1" \
+            {input.ref} {input.r1} {input.r2} 2>{log} | \
+        samtools sort -@ {threads} -o {output.bam}
+        """
+
+
+rule mark_duplicates:
+    input:
+        f"{RESULTS}/aligned/{{sample}}.bam",
+    output:
+        bam=f"{RESULTS}/markdup/{{sample}}.markdup.bam",
+        metrics=f"{RESULTS}/markdup/{{sample}}.markdup.metrics",
+    log: f"{RESULTS}/logs/markdup/{{sample}}.log"
+    resources: mem_mb=16384
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk MarkDuplicates \
+            -I {input} -O {output.bam} -M {output.metrics} \
+            --REMOVE_DUPLICATES false \
+            --OPTICAL_DUPLICATE_PIXEL_DISTANCE 2500 \
+            2>{log}
+        samtools index {output.bam}
+        """
+
+
+rule base_quality_score_recalibration:
+    input:
+        bam=f"{RESULTS}/markdup/{{sample}}.markdup.bam",
+        ref=GENOME,
+    output:
+        table=f"{RESULTS}/bqsr/{{sample}}.recal.table",
+        bam=f"{RESULTS}/bqsr/{{sample}}.bqsr.bam",
+    log: f"{RESULTS}/logs/bqsr/{{sample}}.log"
+    resources: mem_mb=16384
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk BaseRecalibrator \
+            -I {input.bam} -R {input.ref} \
+            --known-sites {DBSNP} --known-sites {MILLS} --known-sites {G1000} \
+            -O {output.table} 2>>{log}
+        gatk ApplyBQSR \
+            -I {input.bam} -R {input.ref} \
+            --bqsr-recal-file {output.table} \
+            -O {output.bam} 2>>{log}
+        """
+
+
+rule haplotype_caller:
+    input:
+        bam=f"{RESULTS}/bqsr/{{sample}}.bqsr.bam",
+        ref=GENOME,
+    output:
+        gvcf=f"{RESULTS}/gvcf/{{sample}}.g.vcf.gz",
+    log: f"{RESULTS}/logs/hc/{{sample}}.log"
+    threads: THREADS
+    resources: mem_mb=32768
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk HaplotypeCaller \
+            -I {input.bam} -R {input.ref} \
+            -O {output.gvcf} \
+            -ERC GVCF \
+            --native-pair-hmm-threads {threads} \
+            2>{log}
+        """
+
+
+rule combine_gvcfs:
+    input:
+        gvcfs=expand(f"{RESULTS}/gvcf/{{sample}}.g.vcf.gz", sample=SAMPLES),
+        ref=GENOME,
+    output:
+        f"{RESULTS}/gvcf/combined.g.vcf.gz",
+    log: f"{RESULTS}/logs/combine_gvcfs.log"
+    resources: mem_mb=16384
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    run:
+        inputs = " ".join(f"-V {g}" for g in input.gvcfs)
+        shell(f"gatk CombineGVCFs -R {input.ref} {inputs} -O {output} 2>{log}")
+
+
+rule genotype_gvcfs:
+    input:
+        gvcf=f"{RESULTS}/gvcf/combined.g.vcf.gz",
+        ref=GENOME,
+    output:
+        f"{RESULTS}/genotyped/joint_genotyped.vcf.gz",
+    log: f"{RESULTS}/logs/genotypegvcfs.log"
+    resources: mem_mb=16384
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk GenotypeGVCFs \
+            -R {input.ref} -V {input.gvcf} \
+            -O {output} \
+            --dbsnp {DBSNP} 2>{log}
+        """
+
+
+rule vqsr_snp:
+    input:
+        vcf=f"{RESULTS}/genotyped/joint_genotyped.vcf.gz",
+        ref=GENOME,
+    output:
+        recal=f"{RESULTS}/vqsr/snp.recal",
+        tranches=f"{RESULTS}/vqsr/snp.tranches",
+        filtered=f"{RESULTS}/vqsr/filtered.vcf.gz",
+    log: f"{RESULTS}/logs/vqsr.log"
+    resources: mem_mb=32768
+    container: "docker://broadinstitute/gatk:4.5.0.0"
+    shell:
+        """
+        gatk VariantRecalibrator \
+            -R {input.ref} -V {input.vcf} \
+            --resource:hapmap,known=false,training=true,truth=true,prior=15.0 {G1000} \
+            --resource:dbsnp,known=true,training=false,truth=false,prior=2.0 {DBSNP} \
+            -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR \
+            -mode SNP -O {output.recal} --tranches-file {output.tranches} 2>>{log}
+        gatk ApplyVQSR \
+            -R {input.ref} -V {input.vcf} \
+            --recal-file {output.recal} --tranches-file {output.tranches} \
+            --truth-sensitivity-filter-level 99.5 -mode SNP \
+            -O {output.filtered} 2>>{log}
+        """
+
+
+rule multiqc:
+    input:
+        expand(f"{RESULTS}/fastqc/{{sample}}_fastqc.html", sample=SAMPLES),
+        expand(f"{RESULTS}/markdup/{{sample}}.markdup.metrics", sample=SAMPLES),
+        expand(f"{RESULTS}/bqsr/{{sample}}.recal.table", sample=SAMPLES),
+    output:
+        f"{RESULTS}/multiqc/multiqc_report.html",
+    log: f"{RESULTS}/logs/multiqc.log"
+    container: "docker://quay.io/biocontainers/multiqc:1.22.3--pyhdfd78af_0"
+    shell: "multiqc {RESULTS} -o {RESULTS}/multiqc --force 2>{log}"
