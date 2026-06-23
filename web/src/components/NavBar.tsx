@@ -20,8 +20,12 @@ export default function NavBar({ active, user, onSignOut }: NavBarProps) {
       className="sticky top-0 z-20 px-6 py-3 flex items-center gap-4 shadow-sm">
 
       {/* Logo */}
-      <a href="/science" className="flex items-center gap-2 shrink-0">
-        <img src="/logo.svg" alt="AI Genomics Agent" style={{ width: 44, height: 28, display: "block" }} />
+      <a href="/science" className="flex items-center gap-2.5 shrink-0">
+        <div style={{ width: 36, height: 36, borderRadius: 9, overflow: "hidden", background: "#060d18", flexShrink: 0, boxShadow: "0 0 0 1px rgba(240,88,8,0.25), 0 2px 8px rgba(0,0,0,0.3)" }}>
+          <img src="/logo-original.png" alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
+              filter: "hue-rotate(170deg) saturate(1.35) brightness(1.08)" }} />
+        </div>
         <span className="text-base font-semibold tracking-tight hidden sm:block" style={{ color: "var(--text)" }}>
           AI Genomics Agent
         </span>
