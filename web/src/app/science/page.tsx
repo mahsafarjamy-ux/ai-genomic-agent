@@ -537,10 +537,10 @@ export default function Home() {
       <NavBar />
 
       {/* ── Light hero with golden-soil ACGT matrix ──────────────────────── */}
-      <section style={{ position: "relative", background: "var(--canvas)", overflow: "hidden" }}>
+      <section style={{ position: "relative", background: "var(--canvas)", overflow: "hidden", minHeight: "100vh" }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28, pointerEvents: "none" }} />
 
-        <div style={{ position: "relative", zIndex: 1, maxWidth: "72rem", margin: "0 auto", padding: "72px 48px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 56, alignItems: "center" }}>
+        <div style={{ position: "relative", zIndex: 1, maxWidth: "72rem", margin: "0 auto", padding: "48px 48px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start", minHeight: "100vh", boxSizing: "border-box" }}>
 
           {/* Left: title + stats + CTAs */}
           <div>
@@ -582,36 +582,30 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right: tool bubble rows (as-is) */}
-          <div className="flex flex-wrap gap-2">
-            {[
-              { icon:"🧬", label:"RNA-seq",              color:"var(--flame)",    bg:"#fff8f3" },
-              { icon:"🔵", label:"Single-Cell",          color:"#7c3aed",         bg:"#f5f3ff" },
-              { icon:"🔬", label:"WGS / WES",            color:"var(--fuchsia)",  bg:"#fff0f7" },
-              { icon:"🔀", label:"Structural Variants",   color:"#0891b2",        bg:"#f0f9ff" },
-              { icon:"📈", label:"CNV Analysis",          color:"#16a34a",        bg:"#f0fdf4" },
-              { icon:"🌊", label:"ATAC-seq",              color:"#0891b2",        bg:"#f0f9ff" },
-              { icon:"📍", label:"ChIP-seq",              color:"var(--amber)",   bg:"#fffbf0" },
-              { icon:"🧪", label:"Methylation",           color:"#b46309",        bg:"#fffbf0" },
-              { icon:"🦠", label:"Microbiome",            color:"#16a34a",        bg:"#f0fdf4" },
-              { icon:"🔩", label:"Proteomics",            color:"var(--fuchsia)", bg:"#fff0f7" },
-              { icon:"🗺️", label:"Spatial",               color:"var(--flame)",   bg:"#fff8f3" },
-              { icon:"🔗", label:"Multi-omics",           color:"#7c3aed",        bg:"#f5f3ff" },
-              { icon:"🔹", label:"miRNA-seq",             color:"#0891b2",        bg:"#f0f9ff" },
-              { icon:"🔁", label:"MSI",                   color:"#16a34a",        bg:"#f0fdf4" },
-              { icon:"🔄", label:"Transposable Elements", color:"#b46309",        bg:"#fffbf0" },
-              { icon:"⚗️", label:"Metabolomics",          color:"#7c3aed",        bg:"#f5f3ff" },
-              { icon:"💧", label:"cfDNA / Liquid Biopsy", color:"#0891b2",        bg:"#f0f9ff" },
-              { icon:"🌡️", label:"cfDNA Multi-analyte",   color:"var(--flame)",   bg:"#fff8f3" },
-            ].map(p => (
-              <span key={p.label} style={{
-                display:"inline-flex", alignItems:"center", gap:5,
-                padding:"6px 13px", borderRadius:30,
-                background:p.bg, border:`1px solid ${p.color}33`,
-                fontSize:13, color:p.color, fontWeight:600, whiteSpace:"nowrap",
-              }}>
-                {p.icon} {p.label}
-              </span>
+          {/* Right: actual pipeline rows — click to jump & expand */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: "calc(100vh - 64px)", overflowY: "auto", paddingRight: 4, paddingTop: 2 }}>
+            {TOOLS.map(t => (
+              <button key={t.id}
+                onClick={() => {
+                  setOpenTool(t.id);
+                  setTimeout(() => document.getElementById(t.id)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", textAlign: "left", cursor: "pointer", width: "100%", transition: "all 0.15s" }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{t.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {t.label}
+                  </div>
+                  <div style={{ display: "flex", gap: 3, marginTop: 3, flexWrap: "wrap" }}>
+                    {t.tags.slice(0, 3).map(tag => (
+                      <span key={tag} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--muted)", fontWeight: 600 }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <span style={{ color: "var(--dim)", fontSize: 10, flexShrink: 0 }}>↓</span>
+              </button>
             ))}
           </div>
         </div>
@@ -1028,7 +1022,6 @@ export default function Home() {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>⏱ {t.time}</span>
                     <span style={{
                       fontSize: 13, color: "var(--muted)", transition: "transform 0.2s",
                       transform: isOpen ? "rotate(180deg)" : "none",
