@@ -544,8 +544,17 @@ export default function Home() {
 
           {/* Left: title + stats + CTAs */}
           <div>
+            {/* Hero logo */}
+            <div style={{ marginBottom: 28, display: "inline-block" }}>
+              <div style={{ width: 80, height: 80, borderRadius: 20, overflow: "hidden", background: "#060d18", boxShadow: "0 0 0 1.5px rgba(240,88,8,0.35), 0 8px 32px rgba(0,0,0,0.25), 0 0 40px rgba(240,88,8,0.1)" }}>
+                <img src="/logo-original.png" alt="AI Genomics Agent"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
+                    filter: "hue-rotate(170deg) saturate(1.35) brightness(1.08)" }} />
+              </div>
+            </div>
+
             <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs mb-8"
-              style={{ background: "#fff8f3", border: "1px solid #ffd4bc", color: "var(--flame)" }}>
+              style={{ background: "#fff8f3", border: "1px solid #ffd4bc", color: "var(--flame)", marginLeft: 16, verticalAlign: "middle" }}>
               <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--flame)" }} />
               Privacy-first · Your genomic data never leaves your machine
             </div>
