@@ -155,7 +155,7 @@ export default function PersonalPage() {
     const draw = () => {
       const cols = Math.floor(canvas.width / fontSize);
       if (drops.length !== cols) drops = Array(cols).fill(1);
-      ctx.fillStyle = "rgba(255,240,252,0.11)";
+      ctx.fillStyle = "rgba(255,240,252,0.18)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       for (let i = 0; i < drops.length; i++) {
         const base = bases[Math.floor(Math.random() * 4)];
@@ -163,7 +163,7 @@ export default function PersonalPage() {
         ctx.font = `${fontSize}px monospace`;
         ctx.fillText(base, i * fontSize, drops[i] * fontSize);
         if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-        drops[i]++;
+        drops[i] += 0.45;  // slow — half speed
       }
       raf = requestAnimationFrame(draw);
     };
@@ -235,7 +235,9 @@ export default function PersonalPage() {
         display: "flex", alignItems: "center", gap: "0.6rem",
       }}>
         <a href="/gateway" style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
-          <img src="/logo.svg" alt="" style={{ width: 44, height: 30, display: "block", filter: "drop-shadow(0 0 5px rgba(240,88,8,0.4))" }} />
+          <img src="/logo-original.png" alt="" style={{ width: 44, height: 44, display: "block", objectFit: "cover",
+            filter: "invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.25)",
+            mixBlendMode: "multiply" as React.CSSProperties["mixBlendMode"] }} />
           <span style={{ fontWeight: 700, fontSize: 14, color: "#1c1a16" }}>Genomics Platform</span>
         </a>
         <span style={{ color: "#d0d0d0", marginLeft: 4 }}>/</span>
@@ -570,13 +572,8 @@ export default function PersonalPage() {
             textAlign: "center",
             overflow: "hidden",
           }}>
-            {/* Deeper purple/magenta ACGT matrix on light pink */}
-            <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.55, pointerEvents: "none" }} />
-
-            {/* Logo watermark — SVG works on any background */}
-            <div style={{ position: "absolute", top: -20, right: 60, width: 220, height: 220, pointerEvents: "none", zIndex: 1, opacity: 0.07 }}>
-              <img src="/logo.svg" alt="" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
-            </div>
+            {/* Gentle purple/magenta ACGT matrix on light pink */}
+            <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28, pointerEvents: "none" }} />
 
             {/* Badge */}
             <div style={{ position: "relative", zIndex: 2 }}>
