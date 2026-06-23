@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import NavBar from "@/components/NavBar";
+import Footer from "@/components/Footer";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
 
@@ -80,6 +81,7 @@ const PIPELINE_RESOURCES: Record<string, { threads: number; memory_gb: number }>
   riboseq: { threads: 16, memory_gb: 32 },  ctdna: { threads: 32, memory_gb: 64 },
   immune_profiling: { threads: 16, memory_gb: 32 }, sv: { threads: 32, memory_gb: 64 },
   cnv: { threads: 16, memory_gb: 32 },      spatial: { threads: 16, memory_gb: 48 },
+  metabolomics: { threads: 8, memory_gb: 16 },
 };
 
 
@@ -117,6 +119,7 @@ const PIPELINE_META: Record<string, { label: string; icon: string; steps: { tool
   sv:                { label: "Structural Variants",        icon: "🔀", steps: [{ tool: "Sniffles2", role: "Long-read SV calling", docker: "quay.io/biocontainers/sniffles" }, { tool: "PBSV", role: "PacBio SV", docker: "quay.io/biocontainers/pbsv" }, { tool: "GRIDSS", role: "Short-read SV", docker: "gridss/gridss" }, { tool: "SURVIVOR", role: "SV merging", docker: "quay.io/biocontainers/survivor" }, { tool: "AnnotSV", role: "Annotation", docker: "quay.io/biocontainers/annotsv" }] },
   cnv:               { label: "Copy Number Variants",       icon: "📈", steps: [{ tool: "CNVkit", role: "CNV calling", docker: "quay.io/biocontainers/cnvkit" }, { tool: "GATK GermlineCNVCaller", role: "Germline CNV", docker: "broadinstitute/gatk" }, { tool: "facets", role: "Somatic CNV + purity", docker: "quay.io/biocontainers/facets" }, { tool: "PennCNV", role: "Array CNV", docker: "quay.io/biocontainers/penncnv" }] },
   spatial:           { label: "Spatial Transcriptomics",    icon: "🗺️", steps: [{ tool: "Space Ranger", role: "Visium alignment", docker: "litd/docker-cellranger" }, { tool: "Seurat", role: "Spatial clustering", docker: "satijalab/seurat" }, { tool: "RCTD", role: "Cell-type deconvolution", docker: "bioconductor/bioconductor_docker" }, { tool: "BayesSpace", role: "Spatial domains", docker: "bioconductor/bioconductor_docker" }] },
+  metabolomics:      { label: "Metabolomics",               icon: "⚗️", steps: [{ tool: "XCMS", role: "Peak detection & alignment", docker: "bioconductor/bioconductor_docker" }, { tool: "MZmine3", role: "Feature finding", docker: "quay.io/biocontainers/mzmine" }, { tool: "MS-DIAL", role: "DIA processing", docker: "quay.io/biocontainers/ms-dial" }, { tool: "SIRIUS", role: "Compound ID (CANOPUS/COSMIC)", docker: "quay.io/biocontainers/sirius" }, { tool: "MetaboAnalyst", role: "Statistical analysis", docker: "xia-lab/metaboanalyst" }, { tool: "COSMOS", role: "Multi-omics integration", docker: "bioconductor/bioconductor_docker" }] },
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1570,6 +1573,7 @@ export default function LaunchPage() {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 }
