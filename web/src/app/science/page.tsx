@@ -540,7 +540,7 @@ export default function Home() {
       <section style={{ position: "relative", background: "var(--canvas)", overflow: "hidden", minHeight: "100vh" }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28, pointerEvents: "none" }} />
 
-        <div style={{ position: "relative", zIndex: 1, maxWidth: "72rem", margin: "0 auto", padding: "48px 48px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "start", minHeight: "100vh", boxSizing: "border-box" }}>
+        <div style={{ position: "relative", zIndex: 1, maxWidth: "74rem", margin: "0 auto", padding: "48px 48px 32px", display: "grid", gridTemplateColumns: "1.05fr 0.95fr", gap: 40, alignItems: "start", minHeight: "100vh", boxSizing: "border-box" }}>
 
           {/* Left: title + stats + CTAs */}
           <div>
@@ -582,107 +582,162 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right: full inline pipeline accordion */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: "calc(100vh - 64px)", overflowY: "auto", paddingRight: 6, paddingTop: 2, paddingBottom: 16 }}>
-            {TOOLS.map(t => {
-              const isOpen = openTool === t.id;
-              return (
-                <div key={t.id} style={{ borderRadius: 14, border: `1.5px solid ${isOpen ? "var(--flame)" : "var(--border)"}`, background: isOpen ? "#fff8f3" : "var(--surface)", overflow: "hidden", transition: "border-color 0.18s, background 0.18s" }}>
-                  {/* Header */}
-                  <button onClick={() => setOpenTool(isOpen ? null : t.id)}
-                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                    <span style={{ fontSize: 22, flexShrink: 0 }}>{t.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: isOpen ? "var(--flame)" : "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {t.label}
-                      </div>
-                      <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
-                        {t.tags.slice(0, 3).map(tag => (
-                          <span key={tag} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 5, fontWeight: 600, background: isOpen ? "#ffd4bc" : "var(--border)", color: isOpen ? "var(--flame)" : "var(--muted)" }}>{tag}</span>
-                        ))}
-                      </div>
-                    </div>
-                    <span style={{ color: "var(--muted)", fontSize: 13, flexShrink: 0, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>▾</span>
-                  </button>
+          {/* Right: dark glass pipeline panel */}
+          <div style={{
+            background: "linear-gradient(160deg, #0d1b2a 0%, #060d18 100%)",
+            borderRadius: 22,
+            overflow: "hidden",
+            boxShadow: "0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.08)",
+            maxHeight: "calc(100vh - 96px)",
+            display: "flex",
+            flexDirection: "column",
+            position: "relative",
+            alignSelf: "start",
+            top: 0,
+          }}>
+            {/* Top accent glow line */}
+            <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "1px", background: "linear-gradient(90deg, transparent, rgba(240,88,8,0.9), transparent)", zIndex: 0 }} />
 
-                  {/* Expanded detail */}
-                  {isOpen && (
-                    <div style={{ padding: "4px 16px 16px", borderTop: "1px solid #ffd4bc" }}>
+            {/* Panel header */}
+            <div style={{ padding: "14px 18px 11px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative", zIndex: 1 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)" }}>
+                Analysis Pipelines
+              </div>
+              <div style={{ fontSize: 9, padding: "2px 9px", borderRadius: 20, background: "rgba(240,88,8,0.12)", color: "#f97316", fontWeight: 700, border: "1px solid rgba(240,88,8,0.28)", letterSpacing: "0.04em" }}>
+                {TOOLS.length} available
+              </div>
+            </div>
 
-                      {/* Data needed */}
-                      <div style={{ marginBottom: 10, marginTop: 10 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 5 }}>📁 What data do you need?</div>
-                        {t.id === "multiomics" ? (
-                          <div>
-                            <p style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.5, marginBottom: 8 }}>Select the omic layers you want to integrate (min. 2):</p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                              {MULTI_LAYER_OPTIONS.map(opt => {
-                                const sel = multiLayers.includes(opt.id);
-                                return (
-                                  <button key={opt.id} onClick={() => toggleLayer(opt.id)}
-                                    style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${sel ? "var(--flame)" : "var(--border)"}`, background: sel ? "#fff8f3" : "var(--canvas)", color: sel ? "var(--flame)" : "var(--muted)", transition: "all 0.12s" }}>
-                                    {opt.icon} {opt.label} {sel && <span style={{ fontSize: 9 }}>✓</span>}
-                                  </button>
-                                );
-                              })}
+            {/* Scrollable pipeline list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "6px", position: "relative", zIndex: 1, scrollbarWidth: "thin", scrollbarColor: "rgba(240,88,8,0.25) transparent" }}>
+              {TOOLS.map((t, idx) => {
+                const isOpen = openTool === t.id;
+                return (
+                  <div key={t.id} style={{
+                    borderRadius: 12,
+                    border: `1px solid ${isOpen ? "rgba(240,88,8,0.5)" : "rgba(255,255,255,0.04)"}`,
+                    background: isOpen ? "rgba(240,88,8,0.07)" : idx % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent",
+                    marginBottom: 3,
+                    overflow: "hidden",
+                    transition: "all 0.18s ease",
+                    boxShadow: isOpen ? "0 0 24px rgba(240,88,8,0.14), inset 0 1px 0 rgba(240,88,8,0.08)" : "none",
+                  }}>
+                    {/* Row header */}
+                    <button onClick={() => setOpenTool(isOpen ? null : t.id)} style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 10,
+                      padding: "10px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left",
+                    }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, filter: isOpen ? "drop-shadow(0 0 5px rgba(240,88,8,0.65))" : "none", transition: "filter 0.2s" }}>{t.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 12, color: isOpen ? "#fb923c" : "rgba(255,255,255,0.82)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {t.label}
+                        </div>
+                        <div style={{ display: "flex", gap: 3, marginTop: 3, flexWrap: "wrap" }}>
+                          {t.tags.slice(0, 3).map(tag => (
+                            <span key={tag} style={{
+                              fontSize: 8, padding: "1px 5px", borderRadius: 4, fontWeight: 600,
+                              background: isOpen ? "rgba(240,88,8,0.15)" : "rgba(255,255,255,0.07)",
+                              color: isOpen ? "#fb923c" : "rgba(255,255,255,0.4)",
+                              border: `1px solid ${isOpen ? "rgba(240,88,8,0.22)" : "rgba(255,255,255,0.07)"}`,
+                            }}>{tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <span style={{ color: isOpen ? "#f97316" : "rgba(255,255,255,0.2)", fontSize: 10, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none", flexShrink: 0 }}>▾</span>
+                    </button>
+
+                    {/* Expanded detail */}
+                    {isOpen && (
+                      <div style={{ padding: "2px 12px 13px", borderTop: "1px solid rgba(240,88,8,0.12)" }}>
+
+                        {/* Data needed */}
+                        <div style={{ marginTop: 10, marginBottom: 9 }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,88,8,0.55)", marginBottom: 5 }}>📁 Data needed</div>
+                          {t.id === "multiomics" ? (
+                            <div>
+                              <p style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginBottom: 7, lineHeight: 1.5 }}>Select omic layers to integrate (min. 2):</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {MULTI_LAYER_OPTIONS.map(opt => {
+                                  const sel = multiLayers.includes(opt.id);
+                                  return (
+                                    <button key={opt.id} onClick={() => toggleLayer(opt.id)}
+                                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 600, cursor: "pointer",
+                                        border: `1px solid ${sel ? "rgba(240,88,8,0.5)" : "rgba(255,255,255,0.1)"}`,
+                                        background: sel ? "rgba(240,88,8,0.15)" : "rgba(255,255,255,0.04)",
+                                        color: sel ? "#fb923c" : "rgba(255,255,255,0.45)", transition: "all 0.12s" }}>
+                                      {opt.icon} {opt.label} {sel && <span style={{ fontSize: 8 }}>✓</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {multiLayers.length < 2 && <p style={{ fontSize: 9, color: "#f87171", marginTop: 5 }}>Select at least 2 layers.</p>}
                             </div>
-                            {multiLayers.length < 2 && <p style={{ fontSize: 10, color: "#dc2626", marginTop: 6 }}>Select at least 2 layers.</p>}
-                          </div>
-                        ) : (
-                          <p style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.55 }}>
-                            {t.data_needed.length > 180 ? t.data_needed.slice(0, 180) + "…" : t.data_needed}
+                          ) : (
+                            <p style={{ fontSize: 10, color: "rgba(255,255,255,0.58)", lineHeight: 1.6 }}>
+                              {t.data_needed.length > 180 ? t.data_needed.slice(0, 180) + "…" : t.data_needed}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Application */}
+                        <div style={{ marginBottom: 9 }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.28)", marginBottom: 5 }}>🔬 What it does</div>
+                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.58)", lineHeight: 1.6 }}>
+                            {t.application.length > 200 ? t.application.slice(0, 200) + "…" : t.application}
                           </p>
-                        )}
-                      </div>
+                        </div>
 
-                      {/* Application */}
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 5 }}>🔬 What it does</div>
-                        <p style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.55 }}>
-                          {t.application.length > 220 ? t.application.slice(0, 220) + "…" : t.application}
-                        </p>
-                      </div>
+                        {/* Tools */}
+                        <div style={{ marginBottom: 9 }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.28)", marginBottom: 5 }}>🛠 Key tools</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                            {t.tools_used.slice(0, 6).map(tool => (
+                              <span key={tool} style={{ fontSize: 8, padding: "2px 7px", borderRadius: 4, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.5)", fontWeight: 600, fontFamily: "monospace" }}>
+                                {tool.split(" (")[0]}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
 
-                      {/* Tools */}
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 5 }}>🛠 Key tools</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                          {t.tools_used.slice(0, 6).map(tool => (
-                            <span key={tool} style={{ fontSize: 9, padding: "2px 8px", borderRadius: 5, background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--muted)", fontWeight: 600 }}>
-                              {tool.split(" (")[0]}
-                            </span>
-                          ))}
+                        {/* Outputs */}
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.28)", marginBottom: 5 }}>📊 Outputs</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            {t.output.split(" · ").slice(0, 4).map((o, i) => (
+                              <div key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", display: "flex", gap: 5, alignItems: "flex-start" }}>
+                                <span style={{ color: "#f97316", flexShrink: 0 }}>▸</span>{o}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: "flex", gap: 7 }}>
+                          <a href={t.id === "multiomics" ? `/launch?type=multiomics&layers=${multiLayers.join(",")}` : `/launch?type=${t.id}`}
+                            style={{
+                              padding: "7px 14px", borderRadius: 9,
+                              background: (t.id === "multiomics" && multiLayers.length < 2) ? "rgba(255,255,255,0.05)" : "#f05808",
+                              color: (t.id === "multiomics" && multiLayers.length < 2) ? "rgba(255,255,255,0.2)" : "#fff",
+                              fontWeight: 700, fontSize: 10, textDecoration: "none", display: "inline-block",
+                              boxShadow: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "0 4px 18px rgba(240,88,8,0.4)",
+                              pointerEvents: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "auto",
+                            }}>
+                            🚀 Launch →
+                          </a>
+                          <a href="/connect"
+                            style={{ padding: "7px 12px", borderRadius: 9, border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)", fontWeight: 600, fontSize: 10, textDecoration: "none", display: "inline-block", background: "rgba(255,255,255,0.04)" }}>
+                            🔗 HPC
+                          </a>
                         </div>
                       </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-                      {/* Outputs */}
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)", marginBottom: 5 }}>📊 Outputs</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          {t.output.split(" · ").slice(0, 4).map((o, i) => (
-                            <div key={i} style={{ fontSize: 10, color: "var(--text)", display: "flex", gap: 5 }}>
-                              <span style={{ color: "var(--flame)", flexShrink: 0 }}>▸</span>{o}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <a href={t.id === "multiomics" ? `/launch?type=multiomics&layers=${multiLayers.join(",")}` : `/launch?type=${t.id}`}
-                          style={{ padding: "8px 16px", borderRadius: 10, background: (t.id === "multiomics" && multiLayers.length < 2) ? "var(--border)" : "var(--flame)", color: (t.id === "multiomics" && multiLayers.length < 2) ? "var(--muted)" : "#fff", fontWeight: 700, fontSize: 11, textDecoration: "none", pointerEvents: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "auto", display: "inline-block" }}>
-                          🚀 Launch pipeline →
-                        </a>
-                        <a href="/connect"
-                          style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid var(--border)", color: "var(--muted)", fontWeight: 600, fontSize: 11, textDecoration: "none", display: "inline-block", background: "var(--canvas)" }}>
-                          🔗 Connect HPC
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {/* Bottom fade */}
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 40, background: "linear-gradient(transparent, rgba(6,13,24,0.8))", pointerEvents: "none", zIndex: 2 }} />
           </div>
         </div>
       </section>

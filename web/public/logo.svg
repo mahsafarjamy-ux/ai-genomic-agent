@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" fill="none">
+  <defs>
+    <filter id="g1" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="g2" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="50%" stop-color="#f05808"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <!-- Dot ring particles -->
+  </defs>
+
+  <!-- Outer glow ring (faint) -->
+  <circle cx="32" cy="20" r="18" stroke="rgba(240,88,8,0.12)" stroke-width="1" fill="none"/>
+
+  <!-- Dot arc left side (mimicking the blue particle arc from the original) -->
+  <circle cx="14" cy="6"  r="1.8" fill="#f97316" opacity="0.7" filter="url(#g1)"/>
+  <circle cx="10" cy="10" r="2.2" fill="#fb923c" opacity="0.8" filter="url(#g1)"/>
+  <circle cx="8"  cy="15" r="2.5" fill="#f05808" opacity="0.9" filter="url(#g1)"/>
+  <circle cx="8"  cy="20" r="2.8" fill="#f05808" opacity="1"   filter="url(#g1)"/>
+  <circle cx="8"  cy="25" r="2.5" fill="#f05808" opacity="0.9" filter="url(#g1)"/>
+  <circle cx="10" cy="30" r="2.2" fill="#fb923c" opacity="0.8" filter="url(#g1)"/>
+  <circle cx="14" cy="34" r="1.8" fill="#f97316" opacity="0.7" filter="url(#g1)"/>
+
+  <!-- Tiny trailing dots -->
+  <circle cx="18" cy="3"  r="1.1" fill="#fbbf24" opacity="0.5"/>
+  <circle cx="23" cy="2"  r="0.8" fill="#fbbf24" opacity="0.35"/>
+  <circle cx="18" cy="37" r="1.1" fill="#fbbf24" opacity="0.5"/>
+  <circle cx="23" cy="38" r="0.8" fill="#fbbf24" opacity="0.35"/>
+
+  <!-- Outer glow path (thick blur) -->
+  <path d="M32,20 C30,11 26,7 20,7 C12,7 7,13 7,20 C7,27 12,33 20,33 C26,33 30,29 32,20 C34,11 38,7 44,7 C52,7 57,13 57,20 C57,27 52,33 44,33 C38,33 34,29 32,20 Z"
+    stroke="url(#grad2)" stroke-width="6" fill="none" opacity="0.18" filter="url(#g2)" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Mid glow -->
+  <path d="M32,20 C30,11 26,7 20,7 C12,7 7,13 7,20 C7,27 12,33 20,33 C26,33 30,29 32,20 C34,11 38,7 44,7 C52,7 57,13 57,20 C57,27 52,33 44,33 C38,33 34,29 32,20 Z"
+    stroke="url(#grad1)" stroke-width="3.5" fill="none" opacity="0.45" filter="url(#g1)" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Main crisp stroke -->
+  <path d="M32,20 C30,11 26,7 20,7 C12,7 7,13 7,20 C7,27 12,33 20,33 C26,33 30,29 32,20 C34,11 38,7 44,7 C52,7 57,13 57,20 C57,27 52,33 44,33 C38,33 34,29 32,20 Z"
+    stroke="url(#grad2)" stroke-width="2.2" fill="none" filter="url(#g1)" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Inner highlight line (bright center) -->
+  <path d="M32,20 C30.5,13 27,9 20,9 C13,9 9,14 9,20 C9,26 13,31 20,31 C27,31 30.5,27 32,20 C33.5,13 37,9 44,9 C51,9 55,14 55,20 C55,26 51,31 44,31 C37,31 33.5,27 32,20 Z"
+    stroke="rgba(255,200,100,0.6)" stroke-width="0.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
