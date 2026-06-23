@@ -1,0 +1,15 @@
+.venv
+venv
+node_modules
+web/node_modules
+.next
+web/.next
+.git
+.env
+api/.env
+uploads
+work
+results
+*.db
+__pycache__
+*.pyc
