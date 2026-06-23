@@ -429,8 +429,8 @@ export default function Home() {
     if (!ctx) return;
     let animId: number;
     const bases = ["A","C","G","T"];
-    /* Golden-soil palette — warm amber/ochre on light background */
-    const baseColors: Record<string,string> = { A:"#c8960c", C:"#b06000", G:"#d4a017", T:"#8b5e00" };
+    /* Navy/blue palette — readable on light cream background */
+    const baseColors: Record<string,string> = { A:"#3d7ab5", C:"#1d5e8f", G:"#5a90c0", T:"#2a4a70" };
     const fs = 14;
     let drops: number[] = [];
 
@@ -446,8 +446,8 @@ export default function Home() {
 
     function draw() {
       if (!canvas || !ctx) return;
-      /* Fade with warm cream so characters trail on light background */
-      ctx.fillStyle = "rgba(252, 245, 230, 0.07)";
+      /* Fade against warm cream background */
+      ctx.fillStyle = "rgba(243, 243, 230, 0.09)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.font = `bold ${fs}px 'Courier New',monospace`;
       for (let i = 0; i < drops.length; i++) {
@@ -539,7 +539,7 @@ export default function Home() {
     <div className="min-h-screen" style={{ background: "var(--canvas)", color: "var(--text)" }}>
       <NavBar />
 
-      {/* ── Light hero with golden-soil ACGT matrix ──────────────────────── */}
+      {/* ── Light hero with navy/blue ACGT matrix ──────────────────────── */}
       <section style={{ position: "relative", background: "var(--canvas)", overflow: "hidden", minHeight: "100vh" }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28, pointerEvents: "none" }} />
 
@@ -547,25 +547,20 @@ export default function Home() {
 
           {/* Left: title + stats + CTAs */}
           <div>
-            {/* Hero logo + badge row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 32 }}>
-              <div style={{ width: 72, height: 72, borderRadius: 18, overflow: "hidden", background: "#060d18", flexShrink: 0, boxShadow: "0 0 0 1.5px rgba(240,88,8,0.4), 0 8px 32px rgba(0,0,0,0.2), 0 0 40px rgba(240,88,8,0.12)" }}>
-                <img src="/logo-original.png" alt=""
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
-                    filter: "hue-rotate(170deg) saturate(1.35) brightness(1.08)" }} />
-              </div>
+            {/* Privacy badge row — no logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
               <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs"
-                style={{ background: "#fff8f3", border: "1px solid #ffd4bc", color: "var(--flame)" }}>
-                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--flame)" }} />
+                style={{ background: "#e8f4fd", border: "1px solid #bee3f8", color: "#1d5e8f" }}>
+                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "#2980b9" }} />
                 Privacy-first · Your genomic data never leaves your machine
               </div>
             </div>
 
             <h1 className="font-bold tracking-tight leading-tight mb-6"
-              style={{ fontSize: "clamp(2.4rem,4.5vw,3.6rem)", lineHeight: 1.08 }}>
+              style={{ fontSize: "clamp(2.4rem,4.5vw,3.6rem)", lineHeight: 1.08, color: "var(--text)" }}>
               Accelerating<br />
-              <span style={{ color: "var(--flame)" }}>Scientific</span>{" "}
-              <span style={{ color: "var(--amber)" }}>Discovery</span>
+              <span style={{ color: "#1d5e8f" }}>Scientific</span>{" "}
+              <span style={{ color: "#2980b9" }}>Discovery</span>
             </h1>
 
             <p className="text-sm mb-8" style={{ color: "var(--muted)", lineHeight: 1.75, maxWidth: 430 }}>
@@ -575,7 +570,7 @@ export default function Home() {
             <div style={{ display: "flex", gap: 32, marginBottom: 36, flexWrap: "wrap" }}>
               {STATS.map(([n, l], i) => (
                 <div key={l}>
-                  <div className="text-2xl font-bold" style={{ color: i===0?"var(--flame)":i===1?"var(--fuchsia)":i===2?"var(--amber)":"var(--zest)" }}>{n}</div>
+                  <div className="text-2xl font-bold" style={{ color: i===0?"#1d5e8f":i===1?"#5a90c0":i===2?"#2980b9":"#3d7ab5" }}>{n}</div>
                   <div className="text-xs mt-0.5" style={{ color: "var(--dim)" }}>{l}</div>
                 </div>
               ))}
@@ -583,7 +578,7 @@ export default function Home() {
 
             <div className="flex flex-wrap gap-3">
               <a href="/launch" className="px-7 py-3.5 rounded-xl text-sm font-semibold"
-                style={{ background: "var(--flame)", color: "#fff", boxShadow: "0 4px 14px rgba(240,88,8,0.25)" }}>
+                style={{ background: "linear-gradient(135deg,#1d6fa4,#0a4a7a)", color: "#fff", boxShadow: "0 4px 14px rgba(29,111,164,0.3)" }}>
                 Start Analysis →
               </a>
               <a href="/data" className="px-7 py-3.5 rounded-xl text-sm font-semibold"
