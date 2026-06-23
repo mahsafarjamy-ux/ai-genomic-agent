@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import NavBar from "@/components/NavBar";
 
 const TOOLS = [
@@ -388,9 +388,118 @@ export default function Home() {
   const [multiLayers, setMultiLayers] = useState<string[]>(["rnaseq", "atacseq"]);
   const chatRef = useRef<HTMLInputElement>(null);
 
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [paperText, setPaperText]             = useState("");
   const [paperResult, setPaperResult]         = useState<PaperResult | null>(null);
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>([]);
+  const [paperMode, setPaperMode]             = useState<"paste"|"pmid"|"doi"|"upload">("paste");
+  const [pmidInput, setPmidInput]             = useState("");
+  const [doiInput, setDoiInput]               = useState("");
+  const [fetchLoading, setFetchLoading]       = useState(false);
+  const [fetchError, setFetchError]           = useState<string|null>(null);
+
+  /* ACGT Matrix canvas animation ─────────────────────────────────────── */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let animId: number;
+    const bases = ["A","C","G","T"];
+    const baseColors: Record<string,string> = { A:"#00ff7f", C:"#00cfcf", G:"#00ff44", T:"#44ffcc" };
+    const fs = 14;
+    let drops: number[] = [];
+
+    function resize() {
+      if (!canvas) return;
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      drops = Array.from({ length: Math.floor(canvas.width / (fs * 0.78)) },
+                         () => Math.random() * -(canvas.height / fs));
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    function draw() {
+      if (!canvas || !ctx) return;
+      ctx.fillStyle = "rgba(5,13,26,0.055)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `bold ${fs}px 'Courier New',monospace`;
+      for (let i = 0; i < drops.length; i++) {
+        const base = bases[Math.floor(Math.random() * 4)];
+        const x = i * fs * 0.78, y = drops[i] * fs;
+        ctx.globalAlpha = 1; ctx.fillStyle = "#e0fff0";
+        ctx.fillText(base, x, y);
+        ctx.globalAlpha = 0.65; ctx.fillStyle = baseColors[base];
+        ctx.fillText(bases[Math.floor(Math.random() * 4)], x, y - fs);
+        ctx.globalAlpha = 1;
+        if (y > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i] += 0.42;
+      }
+      animId = requestAnimationFrame(draw);
+    }
+    draw();
+    return () => { cancelAnimationFrame(animId); window.removeEventListener("resize", resize); };
+  }, []);
+
+  /* PubMed PMID fetch ─────────────────────────────────────────────────── */
+  async function fetchByPmid() {
+    if (!pmidInput.trim()) return;
+    setFetchLoading(true); setFetchError(null);
+    try {
+      const res = await fetch(
+        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${encodeURIComponent(pmidInput.trim())}&rettype=abstract&retmode=text`
+      );
+      const text = await res.text();
+      if (text.length < 30) throw new Error("No abstract found. Check the PMID.");
+      setPaperText(text);
+      const r = analysePaper(text);
+      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id));
+    } catch (e: any) {
+      setFetchError(e.message || "Could not fetch from PubMed.");
+    } finally { setFetchLoading(false); }
+  }
+
+  /* CrossRef DOI fetch ────────────────────────────────────────────────── */
+  async function fetchByDoi() {
+    if (!doiInput.trim()) return;
+    setFetchLoading(true); setFetchError(null);
+    try {
+      const doi = doiInput.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "");
+      const res = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`);
+      if (!res.ok) throw new Error("DOI not found in CrossRef.");
+      const { message: w } = await res.json();
+      const parts: string[] = [];
+      if (w.title?.[0])               parts.push(`Title: ${w.title[0]}`);
+      if (w.author?.length)           parts.push(`Authors: ${w.author.slice(0,6).map((a: any) => `${a.given??""} ${a.family??""}`.trim()).join(", ")}`);
+      if (w["container-title"]?.[0])  parts.push(`Journal: ${w["container-title"][0]}`);
+      if (w.published?.["date-parts"]?.[0]?.[0]) parts.push(`Year: ${w.published["date-parts"][0][0]}`);
+      if (w.abstract)                 parts.push(`\nAbstract:\n${w.abstract.replace(/<[^>]+>/g,"")}`);
+      const text = parts.join("\n");
+      if (text.length < 20) throw new Error("CrossRef returned no usable text for this DOI.");
+      setPaperText(text);
+      const r = analysePaper(text);
+      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id));
+    } catch (e: any) {
+      setFetchError(e.message || "Could not fetch from CrossRef.");
+    } finally { setFetchLoading(false); }
+  }
+
+  /* File upload ───────────────────────────────────────────────────────── */
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFetchError(null);
+    if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+      const reader = new FileReader();
+      reader.onload = ev => setPaperText((ev.target?.result as string) ?? "");
+      reader.readAsText(file);
+    } else {
+      setFetchError(`PDF "${file.name}" uploaded. PDF text parsing runs in browser — paste the Methods/Abstract section below for best results, or use PMID/DOI for automatic fetching.`);
+    }
+  }
 
   function handleChat(q: string) {
     setChatQuery(q);
@@ -407,76 +516,88 @@ export default function Home() {
     <div className="min-h-screen" style={{ background: "var(--canvas)", color: "var(--text)" }}>
       <NavBar />
 
-      {/* Hero */}
-      <section className="max-w-5xl mx-auto px-8 pt-16 pb-12 text-center">
-        <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs mb-8"
-          style={{ background: "#fff8f3", border: "1px solid #ffd4bc", color: "var(--flame)" }}>
-          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--flame)" }} />
-          Privacy-first · Your genomic data never leaves your machine
-        </div>
+      {/* ── Dark ACGT matrix hero ────────────────────────────────────────── */}
+      <section style={{ position: "relative", background: "#040d1a", overflow: "hidden", minHeight: "91vh", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        {/* ACGT matrix canvas */}
+        <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.52 }} />
+        {/* Vignette overlay */}
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 80% at 25% 50%, rgba(4,13,26,0.25) 0%, rgba(4,13,26,0.88) 70%)" }} />
 
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight mb-8">
-          One AI Platform for<br />
-          <span style={{ color: "var(--flame)" }}>Genomics, Multi-omics, Proteomics,</span><br />
-          <span style={{ color: "var(--amber)" }}>Imaging, Pathology &amp; Biomedical Discovery</span>
-        </h1>
+        {/* Content grid */}
+        <div style={{ position: "relative", zIndex: 10, maxWidth: 1280, margin: "0 auto", padding: "72px 48px", width: "100%", boxSizing: "border-box", display: "grid", gridTemplateColumns: "1fr min(500px,44%)", gap: 52, alignItems: "center" }}>
 
-        {/* Feature bubbles */}
-        <div className="flex flex-wrap justify-center gap-2 mb-10 max-w-3xl mx-auto">
-          {[
-            { icon: "🧬", label: "RNA-seq",            color: "var(--flame)",   bg: "#fff8f3" },
-            { icon: "🔵", label: "Single-Cell",        color: "#7c3aed",        bg: "#f5f3ff" },
-            { icon: "🔬", label: "WGS / WES",          color: "var(--fuchsia)", bg: "#fff0f7" },
-            { icon: "🔀", label: "Structural Variants", color: "#0891b2",       bg: "#f0f9ff" },
-            { icon: "📈", label: "CNV Analysis",        color: "#16a34a",       bg: "#f0fdf4" },
-            { icon: "🌊", label: "ATAC-seq",            color: "#0891b2",       bg: "#f0f9ff" },
-            { icon: "📍", label: "ChIP-seq",            color: "var(--amber)",  bg: "#fffbf0" },
-            { icon: "🧪", label: "Methylation",         color: "#b46309",       bg: "#fffbf0" },
-            { icon: "🦠", label: "Microbiome",          color: "#16a34a",       bg: "#f0fdf4" },
-            { icon: "🔩", label: "Proteomics",          color: "var(--fuchsia)", bg: "#fff0f7" },
-            { icon: "🗺️", label: "Spatial",             color: "var(--flame)",  bg: "#fff8f3" },
-            { icon: "🔗", label: "Multi-omics",         color: "#7c3aed",       bg: "#f5f3ff" },
-          ].map(p => (
-            <span key={p.label} style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "6px 13px", borderRadius: 30,
-              background: p.bg, border: `1px solid ${p.color}33`,
-              fontSize: 13, color: p.color, fontWeight: 600, whiteSpace: "nowrap",
-            }}>
-              {p.icon} {p.label}
-            </span>
-          ))}
-        </div>
+          {/* Left: text */}
+          <div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 999, padding: "7px 18px", marginBottom: 32, background: "rgba(240,88,8,0.14)", border: "1px solid rgba(240,88,8,0.45)", color: "#ff9050", fontSize: 12, fontWeight: 600 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ff8c00", display: "inline-block", flexShrink: 0, boxShadow: "0 0 8px #ff8c00" }} />
+              Privacy-first · Your genomic data never leaves your machine
+            </div>
 
-        <div className="flex flex-wrap justify-center gap-3">
-          <a href="/launch"
-            className="px-7 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-lg"
-            style={{ background: "var(--flame)", color: "#fff", boxShadow: "0 4px 14px rgba(240,88,8,0.25)" }}>
-            Start Analysis →
-          </a>
-          <a href="#multiomics"
-            className="px-7 py-3.5 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: "var(--fuchsia)", color: "#fff" }}>
-            Multi-omics Integration
-          </a>
+            <h1 style={{ color: "#ffffff", fontSize: "clamp(2.5rem,4.8vw,4rem)", fontWeight: 900, lineHeight: 1.06, marginBottom: 22, letterSpacing: "-0.035em" }}>
+              Accelerating<br />
+              <span style={{ color: "#ff6b35" }}>Scientific</span><br />
+              Discovery
+            </h1>
+
+            <p style={{ color: "#94a3b8", fontSize: "1.1rem", lineHeight: 1.68, marginBottom: 44, maxWidth: 460 }}>
+              One AI platform for Genomics, Multi-omics, Proteomics, Imaging, Pathology &amp; Biomedical Discovery — privacy-first, all computation stays on your machine.
+            </p>
+
+            {/* Stats */}
+            <div style={{ display: "flex", gap: 36, marginBottom: 44, flexWrap: "wrap" }}>
+              {STATS.map(([n, l], i) => (
+                <div key={l}>
+                  <div style={{ fontSize: "1.9rem", fontWeight: 900, lineHeight: 1, color: i===0?"#ff6b35":i===1?"#a855f7":i===2?"#f59e0b":"#00d4ff" }}>{n}</div>
+                  <div style={{ color: "#475569", fontSize: "0.75rem", marginTop: 4 }}>{l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* CTAs */}
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+              <a href="/launch" style={{ padding: "13px 30px", borderRadius: 12, background: "#ff6600", color: "#fff", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem", boxShadow: "0 4px 20px rgba(255,102,0,0.42)" }}>
+                Start Analysis →
+              </a>
+              <a href="/data" style={{ padding: "13px 30px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.18)", color: "#e2e8f0", fontWeight: 600, textDecoration: "none", fontSize: "0.9rem", background: "rgba(255,255,255,0.05)" }}>
+                Browse Public Data
+              </a>
+            </div>
+          </div>
+
+          {/* Right: tool grid card */}
+          <div style={{ background: "rgba(255,255,255,0.97)", borderRadius: 24, padding: "24px 22px 18px", boxShadow: "0 32px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)" }}>
+            <p style={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.09em", color: "#94a3b8", marginBottom: 16 }}>Analysis Tools</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7 }}>
+              {[
+                { icon:"🧬", label:"RNA-seq",            desc:"Expression profiling",      id:"rnaseq" },
+                { icon:"🔵", label:"Single-Cell",        desc:"Cell type clustering",       id:"scrnaseq" },
+                { icon:"🔬", label:"WGS / WES",          desc:"Whole genome sequencing",    id:"wgs" },
+                { icon:"🔀", label:"Structural Variants", desc:"SV detection & fusion",     id:"sv" },
+                { icon:"📈", label:"CNV Analysis",        desc:"Copy number variation",     id:"cnv" },
+                { icon:"🌊", label:"ATAC-seq",            desc:"Chromatin accessibility",   id:"atacseq" },
+                { icon:"📍", label:"ChIP-seq",            desc:"Protein-DNA binding",       id:"chipseq" },
+                { icon:"🧪", label:"Methylation",         desc:"DNA methylation",           id:"methylation" },
+                { icon:"🦠", label:"Microbiome",          desc:"Microbial profiling",        id:"microbiome" },
+                { icon:"🔩", label:"Proteomics",          desc:"Mass spec quantification",  id:"proteomics" },
+                { icon:"🗺️", label:"Spatial",             desc:"Spatial transcriptomics",   id:"spatial_transcriptomics" },
+                { icon:"🔗", label:"Multi-omics",         desc:"Integrative analysis",      id:"multiomics" },
+              ].map(t => (
+                <a key={t.label} href={`/science#${t.id}`}
+                  style={{ display:"block", padding:"10px 8px", borderRadius:10, border:"1px solid #f1f5f9", textDecoration:"none" }}>
+                  <div style={{ fontSize:18, marginBottom:5 }}>{t.icon}</div>
+                  <div style={{ fontSize:10, fontWeight:700, color:"#1e293b", lineHeight:1.3 }}>{t.label}</div>
+                  <div style={{ fontSize:9, color:"#94a3b8", marginTop:2, lineHeight:1.3 }}>{t.desc}</div>
+                </a>
+              ))}
+            </div>
+            <div style={{ marginTop:14, padding:"9px 12px", borderRadius:10, background:"#f8fafc", display:"flex", alignItems:"center", justifyContent:"center", gap:18 }}>
+              {["🛡️ Privacy-first","🔒 Secure","💻 Local Processing"].map(s => (
+                <span key={s} style={{ fontSize:10, color:"#64748b", fontWeight:600 }}>{s}</span>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
-
-      {/* Stats */}
-      <div className="max-w-5xl mx-auto px-8 pb-12">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {STATS.map(([n, l], i) => (
-            <div key={l} className="rounded-2xl p-4 text-center"
-              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <div className="text-2xl font-bold"
-                style={{ color: i === 0 ? "var(--flame)" : i === 1 ? "var(--fuchsia)" : i === 2 ? "var(--amber)" : "var(--zest)" }}>
-                {n}
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{l}</div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* ── Replicate a Paper ──────────────────────────────────────────────── */}
       <section className="max-w-5xl mx-auto px-8 pb-10" style={{ borderTop: "1px solid var(--border)", paddingTop: 40 }}>
@@ -501,11 +622,74 @@ export default function Home() {
         {!paperResult ? (
           /* Input state */
           <div>
+            {/* Mode tabs */}
+            <div style={{ display:"flex", gap:2, marginBottom:14, background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, padding:4, width:"fit-content" }}>
+              {(["paste","pmid","doi","upload"] as const).map(m => (
+                <button key={m} onClick={() => { setPaperMode(m); setFetchError(null); }}
+                  style={{ padding:"7px 16px", borderRadius:9, fontSize:12, fontWeight:600, border:"none", cursor:"pointer", transition:"all 0.15s",
+                    background: paperMode===m ? "var(--flame)" : "transparent",
+                    color: paperMode===m ? "#fff" : "var(--muted)" }}>
+                  {m==="paste"?"Paste Text":m==="pmid"?"PubMed PMID":m==="doi"?"DOI":"Upload PDF / TXT"}
+                </button>
+              ))}
+            </div>
+
+            {/* PMID row */}
+            {paperMode === "pmid" && (
+              <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                <input value={pmidInput} onChange={e=>setPmidInput(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&fetchByPmid()}
+                  placeholder="e.g. 34616062"
+                  style={{ flex:1, padding:"11px 14px", borderRadius:10, fontSize:13, background:"var(--surface)", border:"1.5px solid var(--border)", color:"var(--text)", outline:"none" }} />
+                <button onClick={fetchByPmid} disabled={fetchLoading||!pmidInput.trim()}
+                  style={{ padding:"11px 22px", borderRadius:10, background:"var(--flame)", color:"#fff", fontWeight:700, fontSize:13, border:"none", cursor:"pointer", opacity:fetchLoading||!pmidInput.trim()?0.5:1 }}>
+                  {fetchLoading?"Fetching...":"Fetch Abstract →"}
+                </button>
+              </div>
+            )}
+
+            {/* DOI row */}
+            {paperMode === "doi" && (
+              <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                <input value={doiInput} onChange={e=>setDoiInput(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&fetchByDoi()}
+                  placeholder="e.g. 10.1038/s41586-021-03544-w  or  https://doi.org/10.1038/..."
+                  style={{ flex:1, padding:"11px 14px", borderRadius:10, fontSize:13, background:"var(--surface)", border:"1.5px solid var(--border)", color:"var(--text)", outline:"none" }} />
+                <button onClick={fetchByDoi} disabled={fetchLoading||!doiInput.trim()}
+                  style={{ padding:"11px 22px", borderRadius:10, background:"var(--flame)", color:"#fff", fontWeight:700, fontSize:13, border:"none", cursor:"pointer", opacity:fetchLoading||!doiInput.trim()?0.5:1 }}>
+                  {fetchLoading?"Fetching...":"Fetch via CrossRef →"}
+                </button>
+              </div>
+            )}
+
+            {/* Upload row */}
+            {paperMode === "upload" && (
+              <label style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, padding:28, borderRadius:14, border:"2px dashed var(--border)", cursor:"pointer", background:"var(--surface)", marginBottom:12 }}>
+                <span style={{ fontSize:30 }}>📄</span>
+                <span style={{ fontSize:13, color:"var(--muted)", fontWeight:600 }}>Click to upload PDF or TXT file</span>
+                <span style={{ fontSize:11, color:"var(--dim)", textAlign:"center", maxWidth:380 }}>
+                  .txt files: text extracted automatically. PDFs: paste the Methods section below or use PMID/DOI for instant fetch.
+                </span>
+                <input ref={fileInputRef} type="file" accept=".pdf,.txt,.md" style={{ display:"none" }} onChange={handleFileUpload} />
+              </label>
+            )}
+
+            {fetchError && (
+              <div style={{ marginBottom:12, padding:"10px 14px", borderRadius:10, background:"#fff0f0", border:"1px solid #fca5a5", color:"#dc2626", fontSize:12 }}>
+                {fetchError}
+              </div>
+            )}
+
             <textarea
               value={paperText}
               onChange={e => setPaperText(e.target.value)}
-              rows={7}
-              placeholder={"Paste the paper abstract or methods section here...\n\ne.g. \"...total RNA was extracted and libraries prepared... aligned with STAR 2.7.9... DESeq2 (v1.40)... code at github.com/author/repo... UMAP computed using SCANPY...\""}
+              rows={paperMode==="paste" ? 7 : 4}
+              placeholder={
+                paperMode==="pmid" ? "Abstract will appear here after fetching — you can also edit or add the methods section..." :
+                paperMode==="doi"  ? "Metadata & abstract will appear here after fetching from CrossRef..." :
+                paperMode==="upload" ? "Extracted text will appear here, or paste additional context..." :
+                "Paste the paper abstract or methods section here...\n\ne.g. \"...total RNA was extracted... aligned with STAR 2.7.9... DESeq2 (v1.40)... code at github.com/author/repo... UMAP computed using SCANPY...\""
+              }
               style={{
                 width: "100%", padding: "14px 16px", borderRadius: 14, fontSize: 13,
                 lineHeight: 1.65, resize: "vertical", boxSizing: "border-box",
@@ -515,7 +699,7 @@ export default function Home() {
             />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
               <span style={{ fontSize: 11, color: "var(--dim)" }}>
-                Methods, abstract, or supplementary text · parsed entirely in your browser
+                {paperMode==="pmid"?"PubMed eutils API · free, no key needed":paperMode==="doi"?"CrossRef API · free, no key needed":paperMode==="upload"?"File read in your browser · nothing uploaded":"Methods, abstract, or supplementary text · parsed entirely in your browser"}
               </span>
               <button
                 onClick={() => {

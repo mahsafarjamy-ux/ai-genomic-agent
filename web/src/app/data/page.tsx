@@ -889,6 +889,19 @@ export default function PublicDataPage() {
                             </a>
                             {p.n_cases && <span className="text-xs" style={{ color: "var(--dim)" }}>{p.n_cases.toLocaleString()} cases</span>}
                             {p.n_files && <span className="text-xs" style={{ color: "var(--dim)" }}>{p.n_files.toLocaleString()} files</span>}
+                            {/* Access level badge */}
+                            {p.dbgap ? (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                                title="Raw FASTQ/BAM require dbGaP approval. Processed counts & clinical data are open access."
+                                style={{ background:"#fef9c3", color:"#92400e", border:"1px solid #fde68a" }}>
+                                ⚠ Controlled (dbGaP)
+                              </span>
+                            ) : (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                                style={{ background:"#f0fdf4", color:"#15803d", border:"1px solid #bbf7d0" }}>
+                                ✓ Open Access
+                              </span>
+                            )}
                             {p.dbgap && <span className="text-xs font-mono" style={{ color: "var(--dim)" }}>{p.dbgap}</span>}
                           </div>
                           <p className="text-sm font-medium mb-1" style={{ color: "var(--text)" }}>{p.title}</p>
