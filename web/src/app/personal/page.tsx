@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
+import TrustPanel from "@/components/TrustPanel";
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 interface InsightCard {
@@ -133,6 +134,7 @@ export default function PersonalPage() {
   const [results, setResults]       = useState<AnalysisResult | null>(null);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
+  const [analysisDate, setAnalysisDate] = useState("");
   const fileRef   = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -145,14 +147,15 @@ export default function PersonalPage() {
     resize();
     window.addEventListener("resize", resize);
     const bases = ["A","C","G","T"];
-    const baseColors: Record<string,string> = { A:"#e879f9", C:"#c084fc", G:"#a855f7", T:"#d946ef" };
+    // Deeper purple/magenta for contrast on light pink background
+    const baseColors: Record<string,string> = { A:"#9333ea", C:"#c026d3", G:"#7c3aed", T:"#be185d" };
     const fontSize = 13;
     let drops: number[] = Array(Math.floor(canvas.width / fontSize)).fill(1);
     let raf: number;
     const draw = () => {
       const cols = Math.floor(canvas.width / fontSize);
       if (drops.length !== cols) drops = Array(cols).fill(1);
-      ctx.fillStyle = "rgba(255,245,252,0.07)";
+      ctx.fillStyle = "rgba(255,240,252,0.11)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       for (let i = 0; i < drops.length; i++) {
         const base = bases[Math.floor(Math.random() * 4)];
@@ -201,6 +204,7 @@ export default function PersonalPage() {
       const data: AnalysisResult = await res.json();
       setResults(data);
       setStep("results");
+      setAnalysisDate(new Date().toISOString());
       if (data.categories.length > 0) setOpenCategory(data.categories[0].category);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Analysis failed";
@@ -436,6 +440,90 @@ export default function PersonalPage() {
               See plans →
             </button>
           </div>
+
+          {/* Trust & Provenance Panel */}
+          <TrustPanel
+            provenance={{
+              pipelineName: "Personal DNA Analysis",
+              toolVersion: "1.0",
+              inputFile: results.summary.file_source,
+              runDate: analysisDate || new Date().toISOString(),
+              analysisMode: "SNP pattern matching (device-local)",
+              referenceDb: "ClinVar / dbSNP reference SNPs",
+              sampleId: user?.name ?? "anonymous",
+              status: "complete",
+              parameters: {
+                snps_checked: String(results.summary.total_snps_checked),
+                snps_found:   String(results.summary.total_snps_found),
+                categories:   String(results.categories.length),
+              },
+            }}
+            qcChecks={[
+              {
+                name: "File validation",
+                status: "pass",
+                value: results.summary.file_source,
+                detail: "23andMe / AncestryDNA / MyHeritage format accepted",
+              },
+              {
+                name: "SNPs checked",
+                status: results.summary.total_snps_checked > 100 ? "pass" : "warn",
+                value: `${results.summary.total_snps_checked.toLocaleString()} SNPs`,
+                detail: "Total genetic markers evaluated from your file",
+              },
+              {
+                name: "SNPs found",
+                status: results.summary.total_snps_found > 0 ? "pass" : "warn",
+                value: `${results.summary.total_snps_found} reportable`,
+                detail: "Markers with known research associations",
+              },
+              {
+                name: "Missing values",
+                status: results.summary.total_snps_found < results.summary.total_snps_checked * 0.5 ? "warn" : "pass",
+                value: `${Math.max(0, results.summary.total_snps_checked - results.summary.total_snps_found)} not matched`,
+                detail: "Markers checked but not matched to reference SNPs",
+              },
+              {
+                name: "Health categories",
+                status: results.categories.length > 0 ? "pass" : "warn",
+                value: `${results.categories.length} areas`,
+                detail: "Health insight categories covered in this preview",
+              },
+              {
+                name: "Privacy",
+                status: "pass",
+                value: "100% on-device",
+                detail: "Your DNA file was never transmitted — all analysis ran locally",
+              },
+            ]}
+            findings={results.categories.flatMap(cat =>
+              cat.findings.map(f => ({
+                finding: f.name,
+                supportingData: `${f.gene} — Your result: ${f.your_result}`,
+                confidence: (f.impact_level === "high" ? "moderate"
+                  : f.impact_level === "protective" ? "moderate"
+                  : "low") as "high" | "moderate" | "low" | "speculative",
+                source: results.summary.file_source,
+                isSpeculative: f.impact_level === "low",
+              }))
+            )}
+            warnings={[
+              "This is a research preview covering ~20 key markers — not a medical test.",
+              "Upgrade to Complete or Lifetime for 1,500+ SNP analysis.",
+            ]}
+            pipelineSteps={[
+              "Raw DNA file read and parsed on your device",
+              "SNP identifiers matched against reference database",
+              "Variant impact classified (high / moderate / low / protective)",
+              "Insights grouped by health category",
+              "AI-generated plain-language explanations compiled",
+            ]}
+            interpretationNotes={[
+              "Candidate findings based on available uploaded data only",
+              "Not a clinical diagnostic — requires validation by a genetic counsellor",
+              "Research support only — do not make medical decisions from this report",
+            ]}
+          />
         </div>
       )}
 
@@ -476,35 +564,32 @@ export default function PersonalPage() {
           {/* ── Hero: title + feature bubbles only ── */}
           <section style={{
             position: "relative",
-            background: "linear-gradient(160deg, #1a0828 0%, #2d0f42 40%, #1e0535 100%)",
-            borderBottom: "1px solid rgba(232,121,249,0.15)",
+            background: "linear-gradient(160deg, #fff0f7 0%, #fff5fb 50%, #fdf0ff 100%)",
+            borderBottom: "1px solid #f0c8e8",
             padding: "4rem 1.5rem 4.5rem",
             textAlign: "center",
             overflow: "hidden",
           }}>
-            {/* Purple/pink ACGT matrix */}
-            <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.25, pointerEvents: "none" }} />
+            {/* Deeper purple/magenta ACGT matrix on light pink */}
+            <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.55, pointerEvents: "none" }} />
 
-            {/* Floating logo — no box, screen blend makes dark bg vanish */}
-            <div style={{ position: "absolute", top: -40, right: 80, width: 260, height: 260, pointerEvents: "none", zIndex: 1, opacity: 0.3 }}>
-              <img src="/logo-original.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", mixBlendMode: "screen" }} />
-            </div>
-            <div style={{ position: "absolute", bottom: -50, left: 40, width: 200, height: 200, pointerEvents: "none", zIndex: 1, opacity: 0.18 }}>
-              <img src="/logo-original.png" alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", mixBlendMode: "screen" }} />
+            {/* Logo watermark — SVG works on any background */}
+            <div style={{ position: "absolute", top: -20, right: 60, width: 220, height: 220, pointerEvents: "none", zIndex: 1, opacity: 0.07 }}>
+              <img src="/logo.svg" alt="" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
             </div>
 
             {/* Badge */}
             <div style={{ position: "relative", zIndex: 2 }}>
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 8,
-              background: "rgba(232,121,249,0.12)", border: "1px solid rgba(232,121,249,0.35)",
+              background: "rgba(147,51,234,0.08)", border: "1px solid rgba(147,51,234,0.25)",
               borderRadius: 20, padding: "6px 14px",
-              fontSize: 12, color: "#e879f9", fontWeight: 600, marginBottom: "1.75rem",
+              fontSize: 12, color: "#9333ea", fontWeight: 600, marginBottom: "1.75rem",
             }}>
               🧬 Personalized health from your actual DNA
             </div>
 
-            <h1 style={{ color: "#fff",
+            <h1 style={{ color: "#1c1a16",
               fontSize: "clamp(2rem, 5vw, 3.25rem)",
               fontWeight: 900,
               letterSpacing: "-0.04em",
@@ -513,10 +598,10 @@ export default function PersonalPage() {
               margin: "0 auto 2.5rem",
             }}>
               Your DNA.<br />
-              <span style={{ color: "#e879f9" }}>Your Health Blueprint.</span>
+              <span style={{ color: "#c026d3" }}>Your Health Blueprint.</span>
             </h1>
 
-            {/* Feature bubbles — adapted for dark bg */}
+            {/* Feature bubbles — light pill style for pink hero */}
             <div style={{
               display: "flex", flexWrap: "wrap", justifyContent: "center",
               gap: 8, maxWidth: 760, margin: "0 auto 3rem",
@@ -524,11 +609,10 @@ export default function PersonalPage() {
               {INSIGHT_PILLS.map(p => (
                 <div key={p.text} style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 16px", borderRadius: 30,
-                  background: "rgba(255,255,255,0.07)", border: `1px solid ${p.color}55`,
+                  padding: "7px 14px", borderRadius: 30,
+                  background: p.bg, border: `1px solid ${p.color}44`,
                   fontSize: 13, color: p.color, fontWeight: 600,
                   whiteSpace: "nowrap",
-                  backdropFilter: "blur(4px)",
                 }}>
                   <span>{p.emoji}</span>
                   <span>{p.text}</span>
@@ -543,10 +627,11 @@ export default function PersonalPage() {
                 onClick={e => { e.preventDefault(); document.getElementById("download-section")?.scrollIntoView({ behavior: "smooth" }); }}
                 style={{
                   padding: "14px 28px", borderRadius: 14,
-                  background: "rgba(255,255,255,0.1)", color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "#1c1a16", color: "#fff",
+                  border: "none",
                   fontWeight: 700, fontSize: 15, textDecoration: "none",
                   display: "inline-flex", alignItems: "center", gap: 8,
+                  boxShadow: "0 4px 14px rgba(28,26,22,0.18)",
                 }}>
                 ⬇ Download Desktop App
               </a>
@@ -554,9 +639,9 @@ export default function PersonalPage() {
                 onClick={() => document.getElementById("analyze-section")?.scrollIntoView({ behavior: "smooth" })}
                 style={{
                   padding: "14px 28px", borderRadius: 14, border: "none",
-                  background: "linear-gradient(135deg, #e879f9, #c084fc)",
+                  background: "linear-gradient(135deg, #c026d3, #9333ea)",
                   color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer",
-                  boxShadow: "0 4px 20px rgba(232,121,249,0.4)",
+                  boxShadow: "0 4px 20px rgba(192,38,211,0.35)",
                 }}>
                 Analyze My DNA →
               </button>

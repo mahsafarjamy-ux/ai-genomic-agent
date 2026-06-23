@@ -1,9 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export default function GatewayPage() {
   const [hovered, setHovered] = useState<"science" | "personal" | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+    resize();
+    window.addEventListener("resize", resize);
+    const bases = ["A", "C", "G", "T"];
+    // Silky silver palette — steel-blue tones
+    const baseColors: Record<string, string> = {
+      A: "#b0bcd4",  // silver-blue
+      C: "#94a3c0",  // steel
+      G: "#d0d8ec",  // light silver
+      T: "#a8b4cc",  // mid silver
+    };
+    const fontSize = 11;
+    let drops: number[] = Array(Math.floor(canvas.width / fontSize)).fill(1);
+    let raf: number;
+    const draw = () => {
+      const cols = Math.floor(canvas.width / fontSize);
+      if (drops.length !== cols) drops = Array(cols).fill(1);
+      ctx.fillStyle = "rgba(255,255,255,0.13)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < drops.length; i++) {
+        const base = bases[Math.floor(Math.random() * 4)];
+        ctx.fillStyle = baseColors[base];
+        ctx.font = `${fontSize}px monospace`;
+        ctx.fillText(base, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+  }, []);
 
   return (
     <div style={{
@@ -12,7 +51,12 @@ export default function GatewayPage() {
       display: "flex",
       flexDirection: "column",
       fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+      position: "relative",
+      overflow: "hidden",
     }}>
+      {/* Silky silver ACGT matrix — full-page background */}
+      <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, width: "100%", height: "100%", opacity: 0.45, pointerEvents: "none", zIndex: 0 }} />
+
       {/* Top bar */}
       <header style={{
         borderBottom: "1px solid #e8e8e8",
@@ -20,18 +64,22 @@ export default function GatewayPage() {
         display: "flex",
         alignItems: "center",
         gap: "0.7rem",
+        position: "relative",
+        zIndex: 2,
+        background: "rgba(255,255,255,0.85)",
+        backdropFilter: "blur(8px)",
       }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: "50%",
-          background: "linear-gradient(135deg, #f05808, #e44c81)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "#fff", fontWeight: 800, fontSize: 15,
-        }}>G</div>
+        {/* Brand logo — original logo, CSS filter removes dark background on white surface */}
+        <img src="/logo-original.png" alt="" style={{
+          width: 44, height: 44, display: "block", objectFit: "cover", flexShrink: 0,
+          filter: "invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.25)",
+          mixBlendMode: "multiply" as React.CSSProperties["mixBlendMode"],
+        }} />
         <span style={{ fontWeight: 700, fontSize: 15, color: "#1c1a16" }}>
           Genomics Platform
         </span>
         <div style={{ marginLeft: "auto" }}>
-          <span style={{ fontSize: 11, color: "#9c9892", background: "#f3f3f3", borderRadius: 20, padding: "3px 10px" }}>
+          <span style={{ fontSize: 11, color: "#9c9892", background: "rgba(243,243,243,0.9)", borderRadius: 20, padding: "3px 10px" }}>
             🔒 Privacy-first · all analysis runs locally
           </span>
         </div>
@@ -45,6 +93,8 @@ export default function GatewayPage() {
         alignItems: "center",
         justifyContent: "center",
         padding: "4rem 1.5rem 3rem",
+        position: "relative",
+        zIndex: 2,
       }}>
         <div style={{
           fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase",
