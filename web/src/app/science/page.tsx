@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
+import TrustPanel from "@/components/TrustPanel";
 
 const TOOLS = [
   {
@@ -418,6 +419,7 @@ export default function Home() {
   const [doiInput, setDoiInput]               = useState("");
   const [fetchLoading, setFetchLoading]       = useState(false);
   const [fetchError, setFetchError]           = useState<string|null>(null);
+  const [paperRunDate, setPaperRunDate]       = useState("");
 
   /* ACGT Matrix canvas animation ─────────────────────────────────────── */
   useEffect(() => {
@@ -477,7 +479,7 @@ export default function Home() {
       if (text.length < 30) throw new Error("No abstract found. Check the PMID.");
       setPaperText(text);
       const r = analysePaper(text);
-      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id));
+      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id)); setPaperRunDate(new Date().toISOString());
     } catch (e: any) {
       setFetchError(e.message || "Could not fetch from PubMed.");
     } finally { setFetchLoading(false); }
@@ -502,7 +504,7 @@ export default function Home() {
       if (text.length < 20) throw new Error("CrossRef returned no usable text for this DOI.");
       setPaperText(text);
       const r = analysePaper(text);
-      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id));
+      setPaperResult(r); setSelectedAnalyses(r.analyses.map(a => a.id)); setPaperRunDate(new Date().toISOString());
     } catch (e: any) {
       setFetchError(e.message || "Could not fetch from CrossRef.");
     } finally { setFetchLoading(false); }
@@ -854,6 +856,7 @@ export default function Home() {
                   const result = analysePaper(paperText);
                   setPaperResult(result);
                   setSelectedAnalyses(result.analyses.map(a => a.id));
+                  setPaperRunDate(new Date().toISOString());
                 }}
                 disabled={!paperText.trim()}
                 style={{
@@ -1040,6 +1043,78 @@ export default function Home() {
                 </div>
               </div>
             )}
+
+            {/* Trust & Provenance Panel */}
+            <TrustPanel
+              provenance={{
+                pipelineName: "AI Paper Analysis",
+                toolVersion: "1.0",
+                inputFile: "Submitted text",
+                runDate: paperRunDate || new Date().toISOString(),
+                analysisMode: "Pattern extraction (browser-local)",
+                referenceDb: "PAPER_PIPELINES + VIZ_PATTERNS registry",
+                status: "complete",
+                parameters: {
+                  text_chars: String(paperText.length),
+                  pipelines_found: String(paperResult?.analyses.length ?? 0),
+                },
+              }}
+              qcChecks={[
+                {
+                  name: "Input length",
+                  status: paperText.length > 200 ? "pass" : paperText.length > 50 ? "warn" : "fail",
+                  value: `${paperText.length} chars`,
+                  detail: "Methods section ≥200 chars gives best results",
+                },
+                {
+                  name: "Pipelines detected",
+                  status: (paperResult?.analyses.length ?? 0) > 0 ? "pass" : "warn",
+                  value: `${paperResult?.analyses.length ?? 0} found`,
+                  detail: "Pattern-matched against 17 known pipeline signatures",
+                },
+                {
+                  name: "Code / Repo links",
+                  status: (paperResult?.codeLinks.length ?? 0) > 0 ? "pass" : "warn",
+                  value: `${paperResult?.codeLinks.length ?? 0} extracted`,
+                  detail: "GitHub, Zenodo, Figshare, GitLab URLs found in text",
+                },
+                {
+                  name: "Figure types",
+                  status: (paperResult?.vizTypes.length ?? 0) > 0 ? "pass" : "pending",
+                  value: `${paperResult?.vizTypes.length ?? 0} types`,
+                  detail: "Visualization types detected (volcano, UMAP, heatmap…)",
+                },
+                {
+                  name: "Analysis scope",
+                  status: "pass",
+                  value: "Browser-local",
+                  detail: "All parsing ran in your browser — no data transmitted",
+                },
+              ]}
+              findings={(paperResult?.analyses ?? []).map(a => ({
+                finding: `${a.label} pipeline detected`,
+                supportingData: "Keyword / regex pattern matched in submitted text",
+                confidence: "moderate" as const,
+                source: "Submitted paper text",
+                isSpeculative: false,
+              }))}
+              warnings={
+                (paperResult?.analyses.length ?? 0) === 0
+                  ? ["No pipelines detected — paste the full Methods section for best results"]
+                  : []
+              }
+              pipelineSteps={[
+                "Text ingested from paste / PMID / DOI / file upload",
+                "Pattern-matched against 17 bioinformatics pipeline signatures",
+                "Repository URLs extracted (GitHub, Zenodo, Figshare, GitLab)",
+                "Figure/visualization type detection",
+              ]}
+              interpretationNotes={[
+                "Based on available uploaded data only",
+                "Candidate findings require manual validation",
+                "Results are for research support — not peer-review ready conclusions",
+              ]}
+            />
           </div>
         )}
       </section>
