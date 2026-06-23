@@ -135,7 +135,7 @@ const TOOLS = [
     tags: ["Translocations", "Inversions", "Large deletions", "Gene fusions"],
     data_needed: "Long-read FASTQ (PacBio HiFi or Oxford Nanopore ≥30× coverage) OR short-read WGS paired-end FASTQ (≥30×). Matched normal sample strongly recommended for somatic SV calling.",
     application: "Detects large-scale chromosomal rearrangements — deletions, duplications, inversions, translocations — that short-read SNV pipelines completely miss. Critical in cancer (e.g. BCR-ABL fusion in CML), rare disease, and constitutional disorders.",
-    tools_used: ["Sniffles2 (long-read)", "PBSV (PacBio)", "GRIDSS (short-read)", "SURVIVOR (merging)", "ANNOTSV"],
+    tools_used: ["Manta (Illumina, tumor-normal pairs)", "Delly (paired-end + split-read, germline)", "GRIDSS (short-read, highest sensitivity)", "Sniffles2 (long-read Nanopore)", "PBSV (PacBio HiFi)", "SURVIVOR (merging callsets)", "ANNOTSV (annotation)"],
     output: "VCF of structural variants · SV circos plot · Gene disruption table · Fusion gene list",
     time: "6–18 h",
   },
@@ -202,6 +202,15 @@ const TOOLS = [
     output: "Tumor fraction estimate · CNV profile · Fragment length distribution · Nucleosome accessibility score per TF · Tissue-of-origin probabilities · Somatic variant calls",
     time: "6–20 h",
   },
+  {
+    icon: "⚗️", id: "metabolomics", label: "Metabolomics · LC-MS/MS & GC-MS",
+    tags: ["LC-MS", "GC-MS", "Feature detection", "Pathway enrichment", "Multi-omics ready"],
+    data_needed: "Raw mass spectrometry files from LC-MS/MS or GC-MS (.raw, .mzML, .mzXML). Positive and/or negative ion mode. For LC-MS: provide a blank, QC pool, and sample injections. Minimum 3 biological replicates per group. For untargeted metabolomics: data-independent acquisition (DIA) preferred.",
+    application: "Identifies and quantifies small molecules — metabolites, lipids, organic acids, amino acids — from cells, tissue, plasma, or urine. Metabolomics captures the functional endpoint of cellular activity that transcriptomics and proteomics miss. Used in: cancer biomarker discovery (e.g. IDH1/2 mutations produce 2-hydroxyglutarate), drug metabolism studies, microbiome–host interactions, inborn errors of metabolism, and aging research. Integrates directly with RNA-seq and proteomics via MOFA+, DIABLO, or COSMOS to build complete multi-omics pictures of metabolic reprogramming.",
+    tools_used: ["XCMS v3 (LC-MS feature detection — most widely used)", "MZmine 3 (centWave algorithm, DDA/DIA)", "MS-DIAL v5 (MSP spectral matching, untargeted lipidomics)", "SIRIUS 6 + CSI:FingerID (molecular formula + structure prediction)", "MetaboAnalyst 6.0 (statistical analysis, pathway enrichment — KEGG/HMDB)", "COSMOS (multi-omics: integrates metabolomics + transcriptomics via network propagation)", "MixOmics DIABLO (supervised multi-omics integration)", "MetFrag (in-silico MS2 fragmentation for compound ID)"],
+    output: "Feature table (m/z × retention time matrix) · Annotated compound list · Differential metabolites (VIP scores, fold change) · Pathway enrichment map (KEGG, HMDB, MetaCyc) · Multi-omics correlation network",
+    time: "3–10 h (data-dependent)",
+  },
 ];
 
 // ── Chat-based pipeline suggester ──────────────────────────────────────────
@@ -228,6 +237,7 @@ const SUGGESTIONS: Array<{ patterns: RegExp; id: string; label: string; icon: st
   { patterns: /\b(msi|microsatellite instab|mismatch repair|mmr|msi.h|mss|lynch syndrome|mantis|msisensor)\b/i,  id: "msi",                 icon: "🔁", label: "Microsatellite Instability",       reason: "determines MSI status — a key immunotherapy biomarker" },
   { patterns: /\b(transposable|retrotranspos|line.1|alu element|sine|erv|endogenous retrovirus|telescope|xtea)\b/i, id: "transposable_elements", icon: "🔄", label: "Transposable Elements",      reason: "quantifies LINE/SINE/ERV activity and detects somatic TE insertions" },
   { patterns: /\b(cell.free dna|fragmentomics|delfi|griffin cfDNA|nucleosome positioning cfDNA|tissue.of.origin cfDNA)\b/i, id: "cfdna_multianalyte", icon: "🌡️", label: "cfDNA Multi-analyte", reason: "exploits fragment patterns, methylation, and CNV from a single blood draw" },
+  { patterns: /\b(metabolom|metabolite|lc.?ms|gc.?ms|xcms|mzmine|metaboanalyst|lipidom|lipidome|small molecule|mass spec metab|sirius|msdial|untargeted|targeted metabol)\b/i, id: "metabolomics", icon: "⚗️", label: "Metabolomics", reason: "quantifies small molecules and metabolites by mass spectrometry" },
 ];
 
 function suggestPipeline(query: string) {
@@ -246,14 +256,21 @@ const STATS = [
 ];
 
 const MULTI_LAYER_OPTIONS = [
-  { id: "rnaseq",      icon: "🧬", label: "RNA-seq" },
-  { id: "scrnaseq",    icon: "🔵", label: "scRNA-seq" },
-  { id: "atacseq",     icon: "🌊", label: "ATAC-seq" },
-  { id: "methylation", icon: "🧪", label: "Methylation" },
-  { id: "chipseq",     icon: "📍", label: "ChIP-seq" },
-  { id: "proteomics",  icon: "🔩", label: "Proteomics" },
-  { id: "wgs",         icon: "🔬", label: "WGS" },
-  { id: "spatial",     icon: "🗺️", label: "Spatial" },
+  { id: "rnaseq",               icon: "🧬", label: "RNA-seq" },
+  { id: "scrnaseq",             icon: "🔵", label: "scRNA-seq" },
+  { id: "atacseq",              icon: "🌊", label: "ATAC-seq" },
+  { id: "methylation",          icon: "🧪", label: "Methylation" },
+  { id: "chipseq",              icon: "📍", label: "ChIP-seq" },
+  { id: "proteomics",           icon: "🔩", label: "Proteomics" },
+  { id: "metabolomics",         icon: "⚗️", label: "Metabolomics" },
+  { id: "wgs",                  icon: "🔬", label: "WGS / WES" },
+  { id: "spatial",              icon: "🗺️", label: "Spatial" },
+  { id: "mirnaseq",             icon: "🔹", label: "miRNA-seq" },
+  { id: "msi",                  icon: "🔁", label: "MSI" },
+  { id: "transposable_elements",icon: "🔄", label: "TE / LINE / SINE" },
+  { id: "ctdna",                icon: "💧", label: "cfDNA / Liquid Biopsy" },
+  { id: "immune_profiling",     icon: "🛡️", label: "Immune Profiling" },
+  { id: "riboseq",              icon: "⚙️", label: "Ribo-seq" },
 ];
 
 // ── Paper replication ──────────────────────────────────────────────────────
@@ -286,6 +303,7 @@ const PAPER_PIPELINES = [
   { id: "msi",                  icon: "🔁", label: "Microsatellite Instability",       patterns: /\b(microsatellite instab|msi.h|mss|mismatch repair|mmr deficient|lynch|msisensor|mantis)\b/i },
   { id: "transposable_elements", icon: "🔄", label: "Transposable Elements",           patterns: /\b(transposable element|retrotransposon|line.?1|alu|sine|erv|endogenous retrovirus|telescope|xtea|te expression)\b/i },
   { id: "cfdna_multianalyte",   icon: "🌡️", label: "cfDNA Multi-analyte",             patterns: /\b(fragmentomics|delfi|griffin nucleosome|nucleosome positioning|tissue.of.origin|cfmedip|epic.seq)\b/i },
+  { id: "metabolomics",         icon: "⚗️", label: "Metabolomics",                   patterns: /\b(metabolom|metabolite|lc.?ms|gc.?ms|xcms|mzmine|metaboanalyst|lipidom|small molecule|sirius|msdial|metfrag|untargeted|targeted metabol)\b/i },
 ];
 
 const VIZ_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
@@ -408,7 +426,8 @@ export default function Home() {
     if (!ctx) return;
     let animId: number;
     const bases = ["A","C","G","T"];
-    const baseColors: Record<string,string> = { A:"#00ff7f", C:"#00cfcf", G:"#00ff44", T:"#44ffcc" };
+    /* Golden-soil palette — warm amber/ochre on light background */
+    const baseColors: Record<string,string> = { A:"#c8960c", C:"#b06000", G:"#d4a017", T:"#8b5e00" };
     const fs = 14;
     let drops: number[] = [];
 
@@ -424,15 +443,16 @@ export default function Home() {
 
     function draw() {
       if (!canvas || !ctx) return;
-      ctx.fillStyle = "rgba(5,13,26,0.055)";
+      /* Fade with warm cream so characters trail on light background */
+      ctx.fillStyle = "rgba(252, 245, 230, 0.07)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.font = `bold ${fs}px 'Courier New',monospace`;
       for (let i = 0; i < drops.length; i++) {
         const base = bases[Math.floor(Math.random() * 4)];
         const x = i * fs * 0.78, y = drops[i] * fs;
-        ctx.globalAlpha = 1; ctx.fillStyle = "#e0fff0";
+        ctx.globalAlpha = 0.9; ctx.fillStyle = baseColors[base];
         ctx.fillText(base, x, y);
-        ctx.globalAlpha = 0.65; ctx.fillStyle = baseColors[base];
+        ctx.globalAlpha = 0.45; ctx.fillStyle = baseColors[bases[Math.floor(Math.random() * 4)]];
         ctx.fillText(bases[Math.floor(Math.random() * 4)], x, y - fs);
         ctx.globalAlpha = 1;
         if (y > canvas.height && Math.random() > 0.975) drops[i] = 0;
@@ -516,85 +536,83 @@ export default function Home() {
     <div className="min-h-screen" style={{ background: "var(--canvas)", color: "var(--text)" }}>
       <NavBar />
 
-      {/* ── Dark ACGT matrix hero ────────────────────────────────────────── */}
-      <section style={{ position: "relative", background: "#040d1a", overflow: "hidden", minHeight: "91vh", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        {/* ACGT matrix canvas */}
-        <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.52 }} />
-        {/* Vignette overlay */}
-        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 80% at 25% 50%, rgba(4,13,26,0.25) 0%, rgba(4,13,26,0.88) 70%)" }} />
+      {/* ── Light hero with golden-soil ACGT matrix ──────────────────────── */}
+      <section style={{ position: "relative", background: "var(--canvas)", overflow: "hidden" }}>
+        <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28, pointerEvents: "none" }} />
 
-        {/* Content grid */}
-        <div style={{ position: "relative", zIndex: 10, maxWidth: 1280, margin: "0 auto", padding: "72px 48px", width: "100%", boxSizing: "border-box", display: "grid", gridTemplateColumns: "1fr min(500px,44%)", gap: 52, alignItems: "center" }}>
+        <div style={{ position: "relative", zIndex: 1, maxWidth: "72rem", margin: "0 auto", padding: "72px 48px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 56, alignItems: "center" }}>
 
-          {/* Left: text */}
+          {/* Left: title + stats + CTAs */}
           <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 999, padding: "7px 18px", marginBottom: 32, background: "rgba(240,88,8,0.14)", border: "1px solid rgba(240,88,8,0.45)", color: "#ff9050", fontSize: 12, fontWeight: 600 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ff8c00", display: "inline-block", flexShrink: 0, boxShadow: "0 0 8px #ff8c00" }} />
+            <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs mb-8"
+              style={{ background: "#fff8f3", border: "1px solid #ffd4bc", color: "var(--flame)" }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--flame)" }} />
               Privacy-first · Your genomic data never leaves your machine
             </div>
 
-            <h1 style={{ color: "#ffffff", fontSize: "clamp(2.5rem,4.8vw,4rem)", fontWeight: 900, lineHeight: 1.06, marginBottom: 22, letterSpacing: "-0.035em" }}>
+            <h1 className="font-bold tracking-tight leading-tight mb-6"
+              style={{ fontSize: "clamp(2.4rem,4.5vw,3.6rem)", lineHeight: 1.08 }}>
               Accelerating<br />
-              <span style={{ color: "#ff6b35" }}>Scientific</span><br />
-              Discovery
+              <span style={{ color: "var(--flame)" }}>Scientific</span>{" "}
+              <span style={{ color: "var(--amber)" }}>Discovery</span>
             </h1>
 
-            <p style={{ color: "#94a3b8", fontSize: "1.1rem", lineHeight: 1.68, marginBottom: 44, maxWidth: 460 }}>
-              One AI platform for Genomics, Multi-omics, Proteomics, Imaging, Pathology &amp; Biomedical Discovery — privacy-first, all computation stays on your machine.
+            <p className="text-sm mb-8" style={{ color: "var(--muted)", lineHeight: 1.75, maxWidth: 430 }}>
+              One AI platform for Genomics, Multi-omics, Proteomics, Imaging, Pathology &amp; Biomedical Discovery — privacy-first, all computation on your machine.
             </p>
 
-            {/* Stats */}
-            <div style={{ display: "flex", gap: 36, marginBottom: 44, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 32, marginBottom: 36, flexWrap: "wrap" }}>
               {STATS.map(([n, l], i) => (
                 <div key={l}>
-                  <div style={{ fontSize: "1.9rem", fontWeight: 900, lineHeight: 1, color: i===0?"#ff6b35":i===1?"#a855f7":i===2?"#f59e0b":"#00d4ff" }}>{n}</div>
-                  <div style={{ color: "#475569", fontSize: "0.75rem", marginTop: 4 }}>{l}</div>
+                  <div className="text-2xl font-bold" style={{ color: i===0?"var(--flame)":i===1?"var(--fuchsia)":i===2?"var(--amber)":"var(--zest)" }}>{n}</div>
+                  <div className="text-xs mt-0.5" style={{ color: "var(--dim)" }}>{l}</div>
                 </div>
               ))}
             </div>
 
-            {/* CTAs */}
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <a href="/launch" style={{ padding: "13px 30px", borderRadius: 12, background: "#ff6600", color: "#fff", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem", boxShadow: "0 4px 20px rgba(255,102,0,0.42)" }}>
+            <div className="flex flex-wrap gap-3">
+              <a href="/launch" className="px-7 py-3.5 rounded-xl text-sm font-semibold"
+                style={{ background: "var(--flame)", color: "#fff", boxShadow: "0 4px 14px rgba(240,88,8,0.25)" }}>
                 Start Analysis →
               </a>
-              <a href="/data" style={{ padding: "13px 30px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.18)", color: "#e2e8f0", fontWeight: 600, textDecoration: "none", fontSize: "0.9rem", background: "rgba(255,255,255,0.05)" }}>
+              <a href="/data" className="px-7 py-3.5 rounded-xl text-sm font-semibold"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}>
                 Browse Public Data
               </a>
             </div>
           </div>
 
-          {/* Right: tool grid card */}
-          <div style={{ background: "rgba(255,255,255,0.97)", borderRadius: 24, padding: "24px 22px 18px", boxShadow: "0 32px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)" }}>
-            <p style={{ fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.09em", color: "#94a3b8", marginBottom: 16 }}>Analysis Tools</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7 }}>
-              {[
-                { icon:"🧬", label:"RNA-seq",            desc:"Expression profiling",      id:"rnaseq" },
-                { icon:"🔵", label:"Single-Cell",        desc:"Cell type clustering",       id:"scrnaseq" },
-                { icon:"🔬", label:"WGS / WES",          desc:"Whole genome sequencing",    id:"wgs" },
-                { icon:"🔀", label:"Structural Variants", desc:"SV detection & fusion",     id:"sv" },
-                { icon:"📈", label:"CNV Analysis",        desc:"Copy number variation",     id:"cnv" },
-                { icon:"🌊", label:"ATAC-seq",            desc:"Chromatin accessibility",   id:"atacseq" },
-                { icon:"📍", label:"ChIP-seq",            desc:"Protein-DNA binding",       id:"chipseq" },
-                { icon:"🧪", label:"Methylation",         desc:"DNA methylation",           id:"methylation" },
-                { icon:"🦠", label:"Microbiome",          desc:"Microbial profiling",        id:"microbiome" },
-                { icon:"🔩", label:"Proteomics",          desc:"Mass spec quantification",  id:"proteomics" },
-                { icon:"🗺️", label:"Spatial",             desc:"Spatial transcriptomics",   id:"spatial_transcriptomics" },
-                { icon:"🔗", label:"Multi-omics",         desc:"Integrative analysis",      id:"multiomics" },
-              ].map(t => (
-                <a key={t.label} href={`/science#${t.id}`}
-                  style={{ display:"block", padding:"10px 8px", borderRadius:10, border:"1px solid #f1f5f9", textDecoration:"none" }}>
-                  <div style={{ fontSize:18, marginBottom:5 }}>{t.icon}</div>
-                  <div style={{ fontSize:10, fontWeight:700, color:"#1e293b", lineHeight:1.3 }}>{t.label}</div>
-                  <div style={{ fontSize:9, color:"#94a3b8", marginTop:2, lineHeight:1.3 }}>{t.desc}</div>
-                </a>
-              ))}
-            </div>
-            <div style={{ marginTop:14, padding:"9px 12px", borderRadius:10, background:"#f8fafc", display:"flex", alignItems:"center", justifyContent:"center", gap:18 }}>
-              {["🛡️ Privacy-first","🔒 Secure","💻 Local Processing"].map(s => (
-                <span key={s} style={{ fontSize:10, color:"#64748b", fontWeight:600 }}>{s}</span>
-              ))}
-            </div>
+          {/* Right: tool bubble rows (as-is) */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              { icon:"🧬", label:"RNA-seq",              color:"var(--flame)",    bg:"#fff8f3" },
+              { icon:"🔵", label:"Single-Cell",          color:"#7c3aed",         bg:"#f5f3ff" },
+              { icon:"🔬", label:"WGS / WES",            color:"var(--fuchsia)",  bg:"#fff0f7" },
+              { icon:"🔀", label:"Structural Variants",   color:"#0891b2",        bg:"#f0f9ff" },
+              { icon:"📈", label:"CNV Analysis",          color:"#16a34a",        bg:"#f0fdf4" },
+              { icon:"🌊", label:"ATAC-seq",              color:"#0891b2",        bg:"#f0f9ff" },
+              { icon:"📍", label:"ChIP-seq",              color:"var(--amber)",   bg:"#fffbf0" },
+              { icon:"🧪", label:"Methylation",           color:"#b46309",        bg:"#fffbf0" },
+              { icon:"🦠", label:"Microbiome",            color:"#16a34a",        bg:"#f0fdf4" },
+              { icon:"🔩", label:"Proteomics",            color:"var(--fuchsia)", bg:"#fff0f7" },
+              { icon:"🗺️", label:"Spatial",               color:"var(--flame)",   bg:"#fff8f3" },
+              { icon:"🔗", label:"Multi-omics",           color:"#7c3aed",        bg:"#f5f3ff" },
+              { icon:"🔹", label:"miRNA-seq",             color:"#0891b2",        bg:"#f0f9ff" },
+              { icon:"🔁", label:"MSI",                   color:"#16a34a",        bg:"#f0fdf4" },
+              { icon:"🔄", label:"Transposable Elements", color:"#b46309",        bg:"#fffbf0" },
+              { icon:"⚗️", label:"Metabolomics",          color:"#7c3aed",        bg:"#f5f3ff" },
+              { icon:"💧", label:"cfDNA / Liquid Biopsy", color:"#0891b2",        bg:"#f0f9ff" },
+              { icon:"🌡️", label:"cfDNA Multi-analyte",   color:"var(--flame)",   bg:"#fff8f3" },
+            ].map(p => (
+              <span key={p.label} style={{
+                display:"inline-flex", alignItems:"center", gap:5,
+                padding:"6px 13px", borderRadius:30,
+                background:p.bg, border:`1px solid ${p.color}33`,
+                fontSize:13, color:p.color, fontWeight:600, whiteSpace:"nowrap",
+              }}>
+                {p.icon} {p.label}
+              </span>
+            ))}
           </div>
         </div>
       </section>
