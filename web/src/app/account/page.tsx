@@ -37,7 +37,7 @@ function getDeviceLabel(): string {
 const PLAN_COLORS: Record<string, { bg: string; border: string; color: string }> = {
   free:       { bg: "#f5f5f2", border: "#ddd",     color: "#777" },
   trial:      { bg: "#f0f4ff", border: "#a0b4f0",  color: "#2244bb" },
-  essential:  { bg: "#fff8f3", border: "#ffc4a0",  color: "var(--flame)" },
+  essential:  { bg: "#edf4fb", border: "#ffc4a0",  color: "var(--flame)" },
   complete:   { bg: "#f3fff0", border: "#90d080",  color: "#2a7d1a" },
   lifetime:   { bg: "#f8f0ff", border: "#c490f0",  color: "#7020c0" },
   enterprise: { bg: "#fffff0", border: "#d4c020",  color: "#806010" },
@@ -74,7 +74,7 @@ const STATUS_STYLE: Record<string, { bg: string; border: string; color: string }
   pending:           { bg: "#fffbf0", border: "#f5d87a",  color: "#a07800" },
   running:           { bg: "#f0f4ff", border: "#a0b4f0",  color: "#2244bb" },
   awaiting_approval: { bg: "#fff5ee", border: "#f5b880",  color: "var(--amber)" },
-  completed:         { bg: "#fff8f3", border: "#ffc4a0",  color: "var(--flame)" },
+  completed:         { bg: "#edf4fb", border: "#ffc4a0",  color: "var(--flame)" },
   failed:            { bg: "#fff0f0", border: "#f5b0b0",  color: "#c0392b" },
   cancelled:         { bg: "#f5f5f2", border: "var(--border)", color: "var(--muted)" },
 };
@@ -101,7 +101,7 @@ function JobCard({ job, onClick, active }: { job: any; onClick: () => void; acti
     <button onClick={onClick}
       className="w-full text-left rounded-xl p-4 transition-all"
       style={{
-        background: active ? "#fff8f3" : s.bg,
+        background: active ? "#edf4fb" : s.bg,
         border: active ? "1.5px solid var(--flame)" : `1px solid ${s.border}`,
       }}>
       <div className="flex items-start justify-between gap-2">
@@ -292,7 +292,7 @@ export default function AccountPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { label: "Running",          value: runningJobs.length,   color: "#2244bb", bg: "#f0f4ff" },
-                { label: "Completed",        value: completedJobs.length, color: "var(--flame)", bg: "#fff8f3" },
+                { label: "Completed",        value: completedJobs.length, color: "var(--flame)", bg: "#edf4fb" },
                 { label: "Failed",           value: failedJobs.length,    color: "#c0392b", bg: "#fff0f0" },
                 { label: "Saved Datasets",   value: savedDatasets.length, color: "var(--text)", bg: "var(--surface)" },
               ].map(stat => (
@@ -624,7 +624,7 @@ export default function AccountPage() {
                         return (
                           <div key={d.id} className="flex items-center justify-between rounded-xl px-4 py-3"
                             style={{
-                              background: isCurrent ? "#fff8f3" : "var(--canvas)",
+                              background: isCurrent ? "#edf4fb" : "var(--canvas)",
                               border: `1px solid ${isCurrent ? "var(--flame)" : "var(--border)"}`,
                             }}>
                             <div>

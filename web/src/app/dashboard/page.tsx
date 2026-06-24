@@ -10,7 +10,7 @@ const STATUS_STYLE: Record<string, { bg: string; border: string; color: string }
   pending:           { bg: "#fffbf0", border: "#f5d87a", color: "#a07800" },
   running:           { bg: "#f0f4ff", border: "#a0b4f0", color: "#2244bb" },
   awaiting_approval: { bg: "#fff5ee", border: "#f5b880", color: "var(--amber)" },
-  completed:         { bg: "#fff8f3", border: "#ffc4a0", color: "var(--flame)" },
+  completed:         { bg: "#edf4fb", border: "#9ecde8", color: "var(--flame)" },
   failed:            { bg: "#fff0f0", border: "#f5b0b0", color: "#c0392b" },
   cancelled:         { bg: "#f5f5f2", border: "var(--border)", color: "var(--muted)" },
 };
@@ -226,7 +226,7 @@ export default function DashboardPage() {
                             {fixProposal.proposed_fix.before}
                           </pre>
                         </div>
-                        <div className="rounded p-2" style={{ background: "#fff8f3", border: "1px solid #ffc4a0" }}>
+                        <div className="rounded p-2" style={{ background: "#edf4fb", border: "1px solid #9ecde8" }}>
                           <div className="mb-1" style={{ color: "var(--flame)" }}>After</div>
                           <pre className="whitespace-pre-wrap" style={{ color: "var(--text)" }}>
                             {fixProposal.proposed_fix.after}

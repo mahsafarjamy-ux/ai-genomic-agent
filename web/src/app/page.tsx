@@ -69,11 +69,8 @@ export default function GatewayPage() {
         background: "rgba(255,255,255,0.85)",
         backdropFilter: "blur(8px)",
       }}>
-        {/* Brand logo — original logo, CSS filter removes dark background on white surface */}
-        <img src="/logo-original.png" alt="" style={{
-          width: 44, height: 44, display: "block", objectFit: "cover", flexShrink: 0,
-          filter: "invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.25)",
-          mixBlendMode: "multiply" as React.CSSProperties["mixBlendMode"],
+        <img src="/logo.png" alt="" style={{
+          width: 72, height: 50, display: "block", flexShrink: 0, objectFit: "contain",
         }} />
         <span style={{ fontWeight: 700, fontSize: 15, color: "#1c1a16" }}>
           Genomics Platform
@@ -131,20 +128,20 @@ export default function GatewayPage() {
             onMouseLeave={() => setHovered(null)}
             style={{
               borderRadius: 22,
-              border: `2px solid ${hovered === "science" ? "#f05808" : "#eaeaea"}`,
+              border: `2px solid ${hovered === "science" ? "#1d6fa4" : "#eaeaea"}`,
               padding: "2.5rem 2.25rem",
               display: "flex", flexDirection: "column", gap: "1.1rem",
               textDecoration: "none", cursor: "pointer",
               transition: "all 0.18s ease",
-              background: hovered === "science" ? "#fff8f3" : "#fafafa",
+              background: hovered === "science" ? "#edf4fb" : "#fafafa",
               boxShadow: hovered === "science"
-                ? "0 12px 40px rgba(240,88,8,0.12)"
+                ? "0 12px 40px rgba(29,111,164,0.12)"
                 : "0 2px 8px rgba(0,0,0,0.04)",
             }}
           >
             <div style={{
               width: 64, height: 64, borderRadius: 18,
-              background: hovered === "science" ? "#fff0e8" : "#f0f0f0",
+              background: hovered === "science" ? "#e8f3fa" : "#f0f0f0",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 32, transition: "background 0.18s",
             }}>🔬</div>
@@ -169,16 +166,16 @@ export default function GatewayPage() {
 
             <div style={{
               marginTop: "auto", paddingTop: "0.75rem",
-              borderTop: `1px solid ${hovered === "science" ? "#ffd4bc" : "#e8e8e8"}`,
+              borderTop: `1px solid ${hovered === "science" ? "#bee3f8" : "#e8e8e8"}`,
               display: "flex", alignItems: "center", justifyContent: "space-between",
               transition: "border-color 0.18s",
             }}>
               <span style={{
                 fontSize: 13, fontWeight: 700,
-                color: hovered === "science" ? "#f05808" : "#9c9892",
+                color: hovered === "science" ? "#1d6fa4" : "#9c9892",
                 transition: "color 0.18s",
               }}>Open Pipeline Platform</span>
-              <span style={{ fontSize: 18, color: hovered === "science" ? "#f05808" : "#c0c0c0", transition: "color 0.18s" }}>→</span>
+              <span style={{ fontSize: 18, color: hovered === "science" ? "#1d6fa4" : "#c0c0c0", transition: "color 0.18s" }}>→</span>
             </div>
           </a>
 
@@ -196,7 +193,7 @@ export default function GatewayPage() {
               transition: "all 0.18s ease",
               background: hovered === "personal" ? "#fff5f8" : "#fafafa",
               boxShadow: hovered === "personal"
-                ? "0 12px 40px rgba(228,76,129,0.12)"
+                ? "0 12px 40px rgba(29,111,164,0.12)"
                 : "0 2px 8px rgba(0,0,0,0.04)",
             }}
           >

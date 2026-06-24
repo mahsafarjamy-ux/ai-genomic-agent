@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: "AI Genomics Agent",
   description: "Privacy-first AI platform for genomics, multi-omics, proteomics, and biomedical discovery",
   icons: {
-    icon: "/logo-original.png",
-    shortcut: "/logo-original.png",
-    apple: "/logo-original.png",
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
   },
 };
 

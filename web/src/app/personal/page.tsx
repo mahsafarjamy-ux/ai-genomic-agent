@@ -235,9 +235,7 @@ export default function PersonalPage() {
         display: "flex", alignItems: "center", gap: "0.6rem",
       }}>
         <a href="/gateway" style={{ display: "flex", alignItems: "center", gap: "0.5rem", textDecoration: "none" }}>
-          <img src="/logo-original.png" alt="" style={{ width: 44, height: 44, display: "block", objectFit: "cover",
-            filter: "invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.25)",
-            mixBlendMode: "multiply" as React.CSSProperties["mixBlendMode"] }} />
+          <img src="/logo.png" alt="" style={{ width: 68, height: 46, display: "block", objectFit: "contain" }} />
           <span style={{ fontWeight: 700, fontSize: 14, color: "#1c1a16" }}>Genomics Platform</span>
         </a>
         <span style={{ color: "#d0d0d0", marginLeft: 4 }}>/</span>

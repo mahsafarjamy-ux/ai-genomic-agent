@@ -19,12 +19,10 @@ export default function NavBar({ active, user, onSignOut }: NavBarProps) {
     <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
       className="sticky top-0 z-20 px-6 py-3 flex items-center gap-4 shadow-sm">
 
-      {/* Logo — original brand logo; invert+hue-rotate restores colors on light bg; multiply blend removes dark bg */}
+      {/* Logo — transparent SVG, works on any background, drop-shadow adds pop */}
       <a href="/science" className="flex items-center gap-2 shrink-0">
-        <img src="/logo-original.png" alt="AI Genomics Agent"
-          style={{ width: 46, height: 46, display: "block", objectFit: "cover",
-            filter: "invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.25)",
-            mixBlendMode: "multiply" as React.CSSProperties["mixBlendMode"] }} />
+        <img src="/logo.png" alt="AI Genomics Agent"
+          style={{ width: 72, height: 50, display: "block", objectFit: "contain" }} />
         <span className="text-base font-semibold tracking-tight hidden sm:block" style={{ color: "var(--text)" }}>
           AI Genomics Agent
         </span>
