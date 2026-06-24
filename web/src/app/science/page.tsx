@@ -446,8 +446,8 @@ export default function Home() {
 
     function draw() {
       if (!canvas || !ctx) return;
-      /* Fade against warm cream background */
-      ctx.fillStyle = "rgba(243, 243, 230, 0.09)";
+      /* Fade against cool light-blue background */
+      ctx.fillStyle = "rgba(244, 247, 251, 0.09)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.font = `bold ${fs}px 'Courier New',monospace`;
       for (let i = 0; i < drops.length; i++) {
@@ -535,8 +535,22 @@ export default function Home() {
     );
   }
 
+  /* Override CSS vars → blue/navy palette for the science page */
+  const blueTheme: React.CSSProperties = {
+    "--canvas":  "#f4f7fb",
+    "--surface": "#ffffff",
+    "--border":  "#d0dce8",
+    "--text":    "#0d1f33",
+    "--muted":   "#4a6578",
+    "--dim":     "#8099aa",
+    "--flame":   "#1d6fa4",
+    "--amber":   "#2980b9",
+    "--fuchsia": "#5a90c0",
+    "--zest":    "#3d7ab5",
+  } as React.CSSProperties;
+
   return (
-    <div className="min-h-screen" style={{ background: "var(--canvas)", color: "var(--text)" }}>
+    <div className="min-h-screen" style={{ ...blueTheme, background: "var(--canvas)", color: "var(--text)" }}>
       <NavBar />
 
       {/* ── Light hero with navy/blue ACGT matrix ──────────────────────── */}
@@ -604,7 +618,7 @@ export default function Home() {
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
                 Analysis Pipelines
               </div>
-              <div style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "#fff8f3", color: "var(--flame)", fontWeight: 700, border: "1px solid #ffd4bc" }}>
+              <div style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "#edf4fb", color: "var(--flame)", fontWeight: 700, border: "1px solid #bee3f8" }}>
                 {TOOLS.length} pipelines
               </div>
             </div>
@@ -617,11 +631,11 @@ export default function Home() {
                   <div key={t.id} style={{
                     borderRadius: 13,
                     border: `1.5px solid ${isOpen ? "var(--flame)" : "var(--border)"}`,
-                    background: isOpen ? "#fff8f3" : "transparent",
+                    background: isOpen ? "#edf4fb" : "transparent",
                     marginBottom: 5,
                     overflow: "hidden",
                     transition: "all 0.18s ease",
-                    boxShadow: isOpen ? "0 2px 12px rgba(240,88,8,0.1)" : "none",
+                    boxShadow: isOpen ? "0 2px 12px rgba(29,111,164,0.1)" : "none",
                   }}>
                     {/* Row header */}
                     <button onClick={() => setOpenTool(isOpen ? null : t.id)} style={{
@@ -637,9 +651,9 @@ export default function Home() {
                           {t.tags.slice(0, 3).map(tag => (
                             <span key={tag} style={{
                               fontSize: 10, padding: "2px 7px", borderRadius: 5, fontWeight: 600,
-                              background: isOpen ? "#ffd4bc" : "var(--canvas)",
+                              background: isOpen ? "#bee3f8" : "var(--canvas)",
                               color: isOpen ? "var(--flame)" : "var(--muted)",
-                              border: `1px solid ${isOpen ? "#ffd4bc" : "var(--border)"}`,
+                              border: `1px solid ${isOpen ? "#bee3f8" : "var(--border)"}`,
                             }}>{tag}</span>
                           ))}
                         </div>
@@ -649,7 +663,7 @@ export default function Home() {
 
                     {/* Expanded detail */}
                     {isOpen && (
-                      <div style={{ padding: "4px 15px 16px", borderTop: "1px solid #ffd4bc" }}>
+                      <div style={{ padding: "4px 15px 16px", borderTop: "1px solid #bee3f8" }}>
 
                         {/* Data needed */}
                         <div style={{ marginTop: 12, marginBottom: 10 }}>
@@ -664,7 +678,7 @@ export default function Home() {
                                     <button key={opt.id} onClick={() => toggleLayer(opt.id)}
                                       style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
                                         border: `1px solid ${sel ? "var(--flame)" : "var(--border)"}`,
-                                        background: sel ? "#fff0e8" : "var(--canvas)",
+                                        background: sel ? "#e8f3fa" : "var(--canvas)",
                                         color: sel ? "var(--flame)" : "var(--muted)", transition: "all 0.12s" }}>
                                       {opt.icon} {opt.label} {sel && <span style={{ fontSize: 10 }}>✓</span>}
                                     </button>
@@ -720,7 +734,7 @@ export default function Home() {
                               background: (t.id === "multiomics" && multiLayers.length < 2) ? "var(--border)" : "var(--flame)",
                               color: (t.id === "multiomics" && multiLayers.length < 2) ? "var(--muted)" : "#fff",
                               fontWeight: 700, fontSize: 12, textDecoration: "none", display: "inline-block",
-                              boxShadow: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "0 4px 14px rgba(240,88,8,0.3)",
+                              boxShadow: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "0 4px 14px rgba(29,111,164,0.3)",
                               pointerEvents: (t.id === "multiomics" && multiLayers.length < 2) ? "none" : "auto",
                             }}>
                             🚀 Launch →
@@ -749,7 +763,7 @@ export default function Home() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 18, marginBottom: 24 }}>
           <div style={{
             width: 52, height: 52, borderRadius: 16, flexShrink: 0,
-            background: "linear-gradient(135deg, #fff0e8, #ffd4bc)",
+            background: "linear-gradient(135deg, #e8f3fa, #bee3f8)",
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
           }}>📄</div>
           <div>
@@ -859,7 +873,7 @@ export default function Home() {
                   background: paperText.trim() ? "var(--flame)" : "var(--border)",
                   color: paperText.trim() ? "#fff" : "var(--muted)",
                   border: "none", cursor: paperText.trim() ? "pointer" : "default",
-                  transition: "all 0.15s", boxShadow: paperText.trim() ? "0 3px 10px rgba(240,88,8,0.2)" : "none",
+                  transition: "all 0.15s", boxShadow: paperText.trim() ? "0 3px 10px rgba(29,111,164,0.2)" : "none",
                 }}>
                 Analyse Paper →
               </button>
@@ -911,8 +925,8 @@ export default function Home() {
                         <label key={a.id} style={{
                           display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
                           padding: "7px 8px", borderRadius: 8,
-                          background: sel ? "#fff8f3" : "transparent",
-                          border: `1px solid ${sel ? "#ffd4bc" : "transparent"}`,
+                          background: sel ? "#edf4fb" : "transparent",
+                          border: `1px solid ${sel ? "#bee3f8" : "transparent"}`,
                           transition: "all 0.12s",
                         }}>
                           <input
@@ -994,7 +1008,7 @@ export default function Home() {
             {selectedAnalyses.length > 0 && (
               <div style={{
                 padding: "14px 18px", borderRadius: 14,
-                background: "#fff8f3", border: "1.5px solid #ffd4bc",
+                background: "#edf4fb", border: "1.5px solid #bee3f8",
                 display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
               }}>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -1016,7 +1030,7 @@ export default function Home() {
                           padding: "8px 16px", borderRadius: 10,
                           background: "var(--flame)", color: "#fff",
                           fontWeight: 700, fontSize: 12, textDecoration: "none",
-                          boxShadow: "0 3px 10px rgba(240,88,8,0.2)",
+                          boxShadow: "0 3px 10px rgba(29,111,164,0.2)",
                           whiteSpace: "nowrap",
                         }}>
                         {p.icon} Run {p.label.split(" ·")[0]} →
@@ -1150,7 +1164,7 @@ export default function Home() {
         {suggestion && (
           <div style={{
             marginTop: 10, padding: "10px 14px", borderRadius: 10,
-            background: "#fff8f3", border: "1px solid #ffd4bc",
+            background: "#edf4fb", border: "1px solid #bee3f8",
             display: "flex", alignItems: "center", gap: 10,
           }}>
             <span style={{ fontSize: 18 }}>{suggestion.icon}</span>
