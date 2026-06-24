@@ -129,7 +129,7 @@ export default function AnalysisSelector({ articleId, subStep, selectedAnalysis,
                 style={{
                   background: isHovered ? "#fff8f3" : "var(--surface)",
                   border: isHovered ? "1px solid var(--flame)" : "1px solid var(--border)",
-                  boxShadow: isHovered ? "0 2px 12px rgba(240,88,8,0.08)" : "none",
+                  boxShadow: isHovered ? "0 2px 12px rgba(29,111,164,0.08)" : "none",
                 }}>
                 <div className="flex items-start gap-4">
                   <span className="text-3xl shrink-0 mt-0.5">{icon}</span>

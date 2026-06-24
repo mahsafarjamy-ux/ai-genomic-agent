@@ -204,8 +204,8 @@ export default function ConnectPage() {
             Point the platform to where your files live. Raw data stays exactly where it is —
             we only read file names and types to launch the right pipeline.
           </p>
-          <div style={{ marginTop: 12, padding: "0.6rem 1rem", background: "#fff8f3",
-            border: "1px solid #fde0cc", borderRadius: 10, fontSize: 12, color: "#b46309",
+          <div style={{ marginTop: 12, padding: "0.6rem 1rem", background: "#edf4fb",
+            border: "1px solid #c8dfe8", borderRadius: 10, fontSize: 12, color: "#1d6fa4",
             display: "flex", alignItems: "flex-start", gap: 8 }}>
             🔒 <span><strong>Privacy:</strong> Your raw genomic data never moves. The AI only sees file names, sizes, and types.</span>
           </div>
@@ -597,7 +597,7 @@ export default function ConnectPage() {
                       </div>
 
                       {scanResult.suggested_analysis && (
-                        <div style={{ background: "#fff8f3", border: "1px solid #fde0cc",
+                        <div style={{ background: "#edf4fb", border: "1px solid #c8dfe8",
                           borderRadius: 8, padding: "0.6rem 0.9rem", fontSize: 12, color: "var(--amber)", marginBottom: 14 }}>
                           Detected pipeline: <strong style={{ color: "var(--flame)" }}>{scanResult.suggested_analysis}</strong>
                         </div>
@@ -612,7 +612,7 @@ export default function ConnectPage() {
 
                       {/* Privacy confirmation inline */}
                       <div style={{ marginTop: 16, display: "flex", alignItems: "flex-start", gap: 10,
-                        background: "#fff8f3", border: "1px solid #fde0cc", borderRadius: 10, padding: "0.8rem 1rem" }}>
+                        background: "#edf4fb", border: "1px solid #c8dfe8", borderRadius: 10, padding: "0.8rem 1rem" }}>
                         <input type="checkbox" id="phi" checked={phiConfirmed}
                           onChange={e => setPhiConfirmed(e.target.checked)}
                           style={{ marginTop: 3, accentColor: "var(--flame)", width: 16, height: 16, cursor: "pointer" }} />
@@ -647,7 +647,7 @@ export default function ConnectPage() {
             </p>
 
             {dataset.suggested_analysis && (
-              <div style={{ background: "#fff8f3", border: "1px solid #fde0cc", borderRadius: 10,
+              <div style={{ background: "#edf4fb", border: "1px solid #c8dfe8", borderRadius: 10,
                 padding: "0.8rem 1rem", display: "inline-block", marginBottom: 24 }}>
                 <p style={{ fontSize: 11, color: "var(--amber)", marginBottom: 2 }}>Detected pipeline</p>
                 <p style={{ fontSize: 18, fontWeight: 700, color: "var(--flame)" }}>{dataset.suggested_analysis}</p>

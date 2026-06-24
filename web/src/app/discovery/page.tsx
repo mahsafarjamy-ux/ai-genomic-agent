@@ -318,7 +318,7 @@ export default function DiscoveryPage() {
             </div>
 
             {result.executive_summary && (
-              <div className="rounded-xl p-4" style={{ background: "#fff8f3", border: "1px solid var(--flame)" }}>
+              <div className="rounded-xl p-4" style={{ background: "#edf4fb", border: "1px solid var(--flame)" }}>
                 <p className="text-xs font-medium mb-1" style={{ color: "var(--flame)" }}>Executive Summary</p>
                 <p className="text-sm" style={{ color: "var(--text)" }}>{result.executive_summary}</p>
               </div>
@@ -347,7 +347,7 @@ export default function DiscoveryPage() {
                         <span className="text-xs px-2 py-0.5 rounded flex-shrink-0"
                           style={
                             h.feasibility === "high"
-                              ? { background: "#fff8f3", color: "var(--flame)" }
+                              ? { background: "#edf4fb", color: "var(--flame)" }
                               : h.feasibility === "medium"
                               ? { background: "#fffbf0", color: "var(--amber)" }
                               : { background: "#fff0f0", color: "#c0392b" }
@@ -417,7 +417,7 @@ export default function DiscoveryPage() {
                         <span className="text-xs px-1.5 py-0.5 rounded"
                           style={a.source === "PubMed"
                             ? { background: "#f0f4ff", color: "#3355cc" }
-                            : { background: "#fff8f0", color: "#c05800" }}>
+                            : { background: "#edf4fb", color: "#c05800" }}>
                           {a.source}
                         </span>
                         <span className="text-xs" style={{ color: "var(--dim)" }}>{a.year}</span>
@@ -465,7 +465,7 @@ export default function DiscoveryPage() {
                     <span className="text-xs px-1.5 py-0.5 rounded"
                       style={a.source === "PubMed"
                         ? { background: "#f0f4ff", color: "#3355cc" }
-                        : { background: "#fff8f0", color: "#c05800" }}>
+                        : { background: "#edf4fb", color: "#c05800" }}>
                       {a.source}
                     </span>
                     <span className="text-xs" style={{ color: "var(--dim)" }}>{a.year}</span>
@@ -591,7 +591,7 @@ function ResultCard({ title, items, color }: { title: string; items: string[]; c
   const styleMap = {
     gray:   { border: "1px solid var(--border)", background: "var(--surface)" },
     yellow: { border: "1px solid #f5e0a0", background: "#fffbf0" },
-    orange: { border: "1px solid #ffd4a0", background: "#fff8f0" },
+    orange: { border: "1px solid #bee3f8", background: "#edf4fb" },
   };
   const dotMap = {
     gray: "var(--muted)", yellow: "var(--amber)", orange: "#c05800",

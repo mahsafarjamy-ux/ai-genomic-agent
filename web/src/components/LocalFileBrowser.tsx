@@ -151,7 +151,7 @@ export default function LocalFileBrowser({ allowedExt = ".fcs", onSelect, onCanc
                     onClick={() => setSelected(isSel ? null : item)}
                     className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all"
                     style={{
-                      background: isSel ? "#fff8f3" : "transparent",
+                      background: isSel ? "#edf4fb" : "transparent",
                       border: isSel ? "1px solid var(--flame)" : "1px solid transparent",
                       color: "var(--text)",
                     }}

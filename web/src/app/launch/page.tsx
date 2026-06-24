@@ -55,7 +55,7 @@ export const ANNOTATION_TOOL_INFO: Record<"VEP" | "ANNOVAR" | "SnpEff", { label:
   },
   ANNOVAR: {
     label: "ANNOVAR",
-    color: "#f05808",
+    color: "#1d6fa4",
     why: "Human-centric. Best for integrating OMIM, ClinVar, COSMIC, dbSNP, ExAC/gnomAD, SIFT, PolyPhen in clinical human genomics workflows.",
     cmd: "table_annovar.pl input.vcf humandb/ -buildver hg38 -out annotated -remove -protocol refGene,clinvar_20221231,gnomad30_genome -operation g,f,f -nastring . -vcfinput",
   },
@@ -579,7 +579,7 @@ function ParamCard({ param, value, onChange }: { param: Param; value: string | n
         {open && (
           <div style={{
             marginTop: 8, padding: "0.6rem 0.85rem", borderRadius: 8,
-            background: "#fff8f3", border: "1px solid #ffd4bc",
+            background: "#edf4fb", border: "1px solid #bee3f8",
             fontSize: 12, color: "#5a3a00", lineHeight: 1.6,
           }}>
             {param.why_it_matters}

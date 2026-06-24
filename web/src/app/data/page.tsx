@@ -63,7 +63,7 @@ const XENA_COHORTS = [
     id: "ccle",
     name: "CCLE — Cancer Cell Line Encyclopedia",
     tag: "Cell lines",
-    tagColor: "#f05808",
+    tagColor: "#1d6fa4",
     description: "RNA-seq, CNV, mutation, and drug sensitivity profiles of 1,019 cancer cell lines across 36 tumor types. Essential for in-vitro validation studies.",
     n: "1,019 cell lines · 36 tumor types",
     data: ["RNA-seq", "CNV", "Somatic SNV", "Drug sensitivity", "Protein (RPPA)"],
@@ -73,7 +73,7 @@ const XENA_COHORTS = [
     id: "hca_lung",
     name: "Human Cell Atlas — Lung (COVID-19 + normal)",
     tag: "HCA",
-    tagColor: "#b46309",
+    tagColor: "#1d6fa4",
     description: "scRNA-seq atlas of normal and COVID-19 lung tissue. Cell type reference for all human lung cell populations.",
     n: "~500,000 cells",
     data: ["scRNA-seq", "Cell type atlas", "COVID-19"],
@@ -315,7 +315,7 @@ export default function PublicDataPage() {
     return (
       <div className="rounded-xl p-4 transition-all"
         style={{
-          background: sel ? "#fff8f3" : "var(--surface)",
+          background: sel ? "#edf4fb" : "var(--surface)",
           border: sel ? "1px solid var(--flame)" : "1px solid var(--border)",
         }}>
         <div className="flex items-start justify-between gap-3">
@@ -398,7 +398,7 @@ export default function PublicDataPage() {
         {/* ── Selected datasets bar ── */}
         {selectedDatasets.length > 0 && !showCompare && (
           <div className="rounded-2xl p-4 flex items-center justify-between gap-4"
-            style={{ background: "#fff8f3", border: "1px solid var(--flame)" }}>
+            style={{ background: "#edf4fb", border: "1px solid var(--flame)" }}>
             <div>
               <p className="text-sm font-semibold" style={{ color: "var(--flame)" }}>
                 {selectedDatasets.length} dataset{selectedDatasets.length > 1 ? "s" : ""} selected for comparison
@@ -421,7 +421,7 @@ export default function PublicDataPage() {
                 </button>
               ) : (
                 <span className="text-xs px-3 py-1.5 rounded-lg"
-                  style={{ background: "#fff8f3", border: "1px dashed var(--flame)", color: "var(--flame)" }}>
+                  style={{ background: "#edf4fb", border: "1px dashed var(--flame)", color: "var(--flame)" }}>
                   Sign in to compare →
                 </span>
               )}
@@ -474,7 +474,7 @@ export default function PublicDataPage() {
                       className="text-left p-3 rounded-xl transition-all"
                       style={
                         sel
-                          ? { background: "#fff8f3", border: "1px solid var(--flame)" }
+                          ? { background: "#edf4fb", border: "1px solid var(--flame)" }
                           : { background: "var(--canvas)", border: "1px solid var(--border)" }
                       }>
                       <div className="flex items-start gap-2">
@@ -624,7 +624,7 @@ export default function PublicDataPage() {
                             <div className="flex flex-wrap gap-1 mt-2">
                               {a.tools.map((t: string) => (
                                 <span key={t} className="text-xs px-1.5 py-0.5 rounded"
-                                  style={{ background: "#fff8f3", color: "var(--flame)", border: "1px solid #ffe4d0" }}>
+                                  style={{ background: "#edf4fb", color: "var(--flame)", border: "1px solid #ffe4d0" }}>
                                   {t}
                                 </span>
                               ))}
@@ -723,7 +723,7 @@ export default function PublicDataPage() {
                   {recommendations.primary_controls.map((c: any, i: number) => (
                     <div key={i} className="rounded-xl p-4"
                       style={{
-                        background: isSelected(c) ? "#fff8f3" : "var(--surface)",
+                        background: isSelected(c) ? "#edf4fb" : "var(--surface)",
                         border: isSelected(c) ? "1px solid var(--flame)" : "1px solid var(--border)",
                       }}>
                       <div className="flex items-start justify-between gap-3">
@@ -877,7 +877,7 @@ export default function PublicDataPage() {
                   {gdcResults.map((p, i) => (
                     <div key={i} className="rounded-xl p-4 transition-all"
                       style={{
-                        background: isSelected(p) ? "#fff8f3" : "var(--surface)",
+                        background: isSelected(p) ? "#edf4fb" : "var(--surface)",
                         border: isSelected(p) ? "1px solid var(--flame)" : "1px solid var(--border)",
                       }}>
                       <div className="flex items-start justify-between gap-3">
@@ -963,7 +963,7 @@ export default function PublicDataPage() {
                   {cbiResults.map((s, i) => (
                     <div key={i} className="rounded-xl p-4 transition-all"
                       style={{
-                        background: isSelected(s) ? "#fff8f3" : "var(--surface)",
+                        background: isSelected(s) ? "#edf4fb" : "var(--surface)",
                         border: isSelected(s) ? "1px solid var(--flame)" : "1px solid var(--border)",
                       }}>
                       <div className="flex items-start justify-between gap-3">
@@ -1032,7 +1032,7 @@ export default function PublicDataPage() {
                   .map(c => (
                   <div key={c.id} className="rounded-xl p-4 transition-all"
                     style={{
-                      background: isSelected(c) ? "#fff8f3" : "var(--surface)",
+                      background: isSelected(c) ? "#edf4fb" : "var(--surface)",
                       border: isSelected(c) ? "1px solid var(--flame)" : "1px solid var(--border)",
                     }}>
                     <div className="flex items-start justify-between gap-3">
@@ -1091,7 +1091,7 @@ export default function PublicDataPage() {
                   <div className="flex gap-1">
                     {db.free && (
                       <span className="text-xs px-1.5 py-0.5 rounded"
-                        style={{ background: "#fff8f3", color: "var(--flame)" }}>Free</span>
+                        style={{ background: "#edf4fb", color: "var(--flame)" }}>Free</span>
                     )}
                     {db.registration_required && (
                       <span className="text-xs px-1.5 py-0.5 rounded"
