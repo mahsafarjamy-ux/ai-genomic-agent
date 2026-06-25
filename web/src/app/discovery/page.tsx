@@ -43,60 +43,21 @@ export default function DiscoveryPage() {
     if (!query) return;
     setLoading(true); setError(null); setResult(null);
     try {
-      // Fetch from PubMed directly — no backend needed
-      const searchTerm = [query, disease, analysisType].filter(Boolean).join(" ");
-      const searchRes = await fetch(
-        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(searchTerm)}&retmax=${maxResults}&retmode=json&sort=relevance`
-      );
-      if (!searchRes.ok) throw new Error("PubMed search failed");
-      const ids: string[] = (await searchRes.json()).esearchresult?.idlist ?? [];
-      if (ids.length === 0) { setResult({ articles_found: 0, articles: [], known_work: [], methodological_gaps: [], data_gaps: [], novel_hypotheses: [], suggested_experiments: [], executive_summary: "No PubMed articles found for this query." }); return; }
-
-      const sumRes = await fetch(
-        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${ids.join(",")}&retmode=json`
-      );
-      const sumData = (await sumRes.json()).result ?? {};
-      const articles = ids.filter(id => sumData[id] && !sumData[id].error).map(id => {
-        const a = sumData[id];
-        return { source: "PubMed", pmid: a.uid, title: a.title ?? "", authors: (a.authors ?? []).map((au: { name: string }) => au.name), journal: a.source ?? "", year: (a.pubdate ?? "").split(" ")[0], url: `https://pubmed.ncbi.nlm.nih.gov/${a.uid}/` };
+      const res = await fetch(`${BASE}/api/discovery/gaps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          disease: disease || undefined,
+          analysis_type: analysisType || undefined,
+          max_results: maxResults,
+        }),
       });
-
-      // Client-side gap analysis — scan titles for methodology keywords
-      const allText = articles.map(a => a.title).join(" ");
-      const METHODS = [
-        { id: "rnaseq",      label: "RNA-seq / bulk transcriptomics",  re: /\b(rna[\-\s]?seq|transcriptom|deseq|edger|star aligner|featurecounts)\b/i },
-        { id: "scrnaseq",    label: "Single-cell RNA-seq",              re: /\b(single[\-\s]?cell|scrna|10x chrom|seurat|scanpy|leiden|umap|t-sne)\b/i },
-        { id: "wgs",         label: "WGS / variant calling",            re: /\b(whole genome seq|wgs|variant call|snv|gatk|mutect|germline|somatic mut)\b/i },
-        { id: "atacseq",     label: "ATAC-seq / open chromatin",        re: /\b(atac[\-\s]?seq|chromatin access|open chromatin|macs[23])\b/i },
-        { id: "chipseq",     label: "ChIP-seq / histone profiling",     re: /\b(chip[\-\s]?seq|cut.run|histone mark|h3k[0-9]|tf binding)\b/i },
-        { id: "methylation", label: "DNA methylation / epigenomics",    re: /\b(methylat|bisulfite|wgbs|rrbs|epic array|dnmt|cpg island)\b/i },
-        { id: "proteomics",  label: "Proteomics / mass spectrometry",   re: /\b(proteom|mass spec|lc.ms|maxquant|tmt|lfq|phosphoproteom)\b/i },
-        { id: "microbiome",  label: "Microbiome / 16S",                 re: /\b(microbiome|16s|metagenom|qiime|dada2|gut microbiota)\b/i },
-        { id: "spatial",     label: "Spatial transcriptomics",          re: /\b(spatial transcriptom|visium|slide.seq|merfish|seqfish)\b/i },
-        { id: "multiomics",  label: "Multi-omics integration",          re: /\b(multi.omics|mofa|data integrat|multimodal|joint analysis)\b/i },
-        { id: "immune",      label: "Immune profiling / TCR/BCR",       re: /\b(tcr|bcr|immune repertoire|hla typing|mixcr|cibersort)\b/i },
-        { id: "ctdna",       label: "Liquid biopsy / ctDNA",            re: /\b(cell.free dna|cfdna|liquid biopsy|ctdna|circulating tumor dna)\b/i },
-        { id: "sv",          label: "Structural variants",              re: /\b(structural variant|translocation|gene fusion|gridss|sniffles)\b/i },
-      ];
-      const found = METHODS.filter(m => m.re.test(allText));
-      const notFound = METHODS.filter(m => !m.re.test(allText));
-
-      const novelHyp = found.length >= 2 ? [
-        { hypothesis: `Integrating ${found[0].label} and ${found[1].label} could reveal novel regulatory mechanisms in ${disease || query}`, feasibility: "high", rationale: "Both modalities have been applied independently — joint analysis is an unexplored extension" },
-        ...(notFound.length > 0 ? [{ hypothesis: `Applying ${notFound[0].label} to ${disease || query} could uncover previously invisible biology`, feasibility: "medium", rationale: "This approach has not appeared in recent PubMed literature on this topic" }] : []),
-      ] : [];
-
-      setResult({
-        articles_found: articles.length,
-        articles: articles.slice(0, 10),
-        executive_summary: `Scanned ${articles.length} recent PubMed articles on "${query}${disease ? ` / ${disease}` : ""}". Detected ${found.length} methodological approaches covered; ${notFound.length} appear under-explored.`,
-        known_work: found.map(m => `${m.label} has been used to study ${disease || query}`),
-        methodological_gaps: notFound.slice(0, 5).map(m => `${m.label} has not been widely applied in this context — a potentially under-explored angle`),
-        data_gaps: ["Longitudinal multi-timepoint studies appear sparse in this area", "Multi-cohort replication and cross-ethnic diversity studies are limited"],
-        novel_hypotheses: novelHyp,
-        suggested_experiments: notFound.slice(0, 3).map(m => ({ title: `Apply ${m.label} to ${disease || query} samples`, analysis_type: m.id, tools: [], expected_finding: `Identify ${m.label} features not captured by current transcriptomic approaches` })),
-      });
-    } catch (e: any) { setError(`Search failed: ${e.message}. Check your internet connection or try a different query.`); }
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`);
+      setResult(await res.json());
+    } catch (e: any) {
+      setError(`Analysis failed: ${e.message}. Make sure the backend is running at ${BASE}.`);
+    }
     finally { setLoading(false); }
   }
 
@@ -299,7 +260,7 @@ export default function DiscoveryPage() {
           <button onClick={handleDiscover} disabled={loading || !query}
             className="px-6 py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
             style={{ background: "var(--flame)", color: "#fff" }}>
-            {loading ? "Scanning PubMed + analysing gaps…" : "Discover Novel Opportunities"}
+            {loading ? "Professor AI scanning literature + building plans…" : "Discover Novel Opportunities"}
           </button>
         </section>
 
@@ -398,6 +359,146 @@ export default function DiscoveryPage() {
                       </div>
                       {tc.rationale && <p className="text-xs" style={{ color: "var(--muted)" }}>{tc.rationale}</p>}
                       {tc.novelty && <p className="text-xs mt-1" style={{ color: "var(--amber)" }}>Novelty: {tc.novelty}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Analysis Plans — AI-generated with public datasets + pipeline steps */}
+            {result.analysis_plans?.length > 0 && (
+              <div>
+                <h3 className="font-semibold mb-1" style={{ color: "var(--text)" }}>Detailed Analysis Plans</h3>
+                <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>
+                  Step-by-step execution plans for the top novel opportunities, including exact public datasets and pipelines.
+                </p>
+                <div className="space-y-5">
+                  {result.analysis_plans.map((plan: any, i: number) => (
+                    <div key={i} className="rounded-2xl p-5 space-y-4"
+                      style={{ background: "var(--surface)", border: "2px solid var(--flame)" }}>
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold px-2 py-0.5 rounded"
+                              style={{ background: "#edf4fb", color: "var(--flame)" }}>
+                              PLAN {i + 1}
+                            </span>
+                            {plan.novelty_score && (
+                              <span className="text-xs" style={{ color: "#f59e0b" }}>
+                                {"⭐".repeat(Math.min(plan.novelty_score, 5))}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="font-semibold text-sm" style={{ color: "var(--text)" }}>{plan.title}</h4>
+                        </div>
+                        {plan.publication_target && (
+                          <span className="text-xs px-2 py-1 rounded shrink-0"
+                            style={{ background: "#f3f0e8", color: "var(--muted)", border: "1px solid var(--border)" }}>
+                            {plan.publication_target}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Hypothesis */}
+                      {plan.hypothesis && (
+                        <div className="rounded-lg px-4 py-3" style={{ background: "#edf4fb", border: "1px solid #c7dff5" }}>
+                          <p className="text-xs font-semibold mb-1" style={{ color: "var(--flame)" }}>Hypothesis</p>
+                          <p className="text-sm" style={{ color: "var(--text)" }}>{plan.hypothesis}</p>
+                          {plan.novelty_explanation && (
+                            <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{plan.novelty_explanation}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Datasets */}
+                      {plan.datasets?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold mb-2" style={{ color: "var(--text)" }}>Required Datasets</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {plan.datasets.map((ds: any, j: number) => (
+                              <div key={j} className="rounded-lg p-3" style={{ background: "var(--canvas)", border: "1px solid var(--border)" }}>
+                                <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>{ds.name}</p>
+                                {ds.accession && (
+                                  <p className="text-xs font-mono mt-0.5" style={{ color: "var(--flame)" }}>{ds.accession}</p>
+                                )}
+                                {ds.size && <p className="text-xs" style={{ color: "var(--muted)" }}>{ds.size}</p>}
+                                {ds.url && (
+                                  <a href={ds.url} target="_blank" rel="noopener noreferrer"
+                                    className="text-xs underline mt-0.5 block" style={{ color: "var(--flame)" }}>
+                                    Open portal →
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pipeline steps */}
+                      {plan.pipeline_steps?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold mb-2" style={{ color: "var(--text)" }}>Pipeline Steps</p>
+                          <div className="space-y-2">
+                            {plan.pipeline_steps.map((step: any, j: number) => (
+                              <div key={j} className="flex gap-3 items-start">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                                  style={{ background: "var(--flame)", color: "#fff" }}>
+                                  {step.step ?? j + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-xs font-semibold font-mono mr-2"
+                                    style={{ color: "var(--flame)" }}>{step.tool}</span>
+                                  <span className="text-xs" style={{ color: "var(--text)" }}>{step.action}</span>
+                                  {step.parameters && (
+                                    <p className="text-xs mt-0.5 font-mono" style={{ color: "var(--muted)" }}>{step.parameters}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Expected outputs + validation */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {plan.expected_outputs?.length > 0 && (
+                          <div className="rounded-lg p-3" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                            <p className="text-xs font-semibold mb-1" style={{ color: "#166534" }}>Expected Outputs</p>
+                            <ul className="space-y-1">
+                              {plan.expected_outputs.map((o: string, j: number) => (
+                                <li key={j} className="text-xs" style={{ color: "#166534" }}>• {o}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {plan.validation_strategy && (
+                          <div className="rounded-lg p-3" style={{ background: "#fffbf0", border: "1px solid #fde68a" }}>
+                            <p className="text-xs font-semibold mb-1" style={{ color: "#92400e" }}>Validation</p>
+                            {plan.validation_strategy.independent_cohort && (
+                              <p className="text-xs" style={{ color: "#92400e" }}>Cohort: {plan.validation_strategy.independent_cohort}</p>
+                            )}
+                            {plan.validation_strategy.statistical_approach && (
+                              <p className="text-xs mt-0.5" style={{ color: "#92400e" }}>Stats: {plan.validation_strategy.statistical_approach}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer meta */}
+                      {(plan.compute_requirements || plan.estimated_time || plan.impact) && (
+                        <div className="flex flex-wrap gap-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
+                          {plan.estimated_time && (
+                            <span className="text-xs" style={{ color: "var(--muted)" }}>Time: {plan.estimated_time}</span>
+                          )}
+                          {plan.compute_requirements && (
+                            <span className="text-xs" style={{ color: "var(--muted)" }}>Compute: {plan.compute_requirements}</span>
+                          )}
+                          {plan.impact && (
+                            <span className="text-xs flex-1" style={{ color: "var(--flame)" }}>Impact: {plan.impact}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

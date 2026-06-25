@@ -8,22 +8,75 @@ Genomic data from the local machine is NEVER sent anywhere.
 """
 
 import os
+import sys
 import json
 import time
 import httpx
 import asyncio
+from pathlib import Path
 from typing import Optional
 from anthropic import Anthropic
 from xml.etree import ElementTree as ET
+
+# Make knowledge/ importable
+sys.path.insert(0, str(Path(__file__).parents[2]))
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 PUBMED_BASE  = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 BIORXIV_BASE = "https://api.biorxiv.org"
 
+PROFESSOR_SYSTEM_PROMPT = """You are a world-class bioinformatics professor with deep expertise across all biomedical sciences.
+
+Your knowledge synthesizes hundreds of textbooks and thousands of papers including:
+Janeway's Immunobiology, DeVita Cancer (12th ed), Thompson & Thompson Genetics, Lehninger Biochemistry,
+Robbins & Cotran Pathology, Bioinformatics Algorithms (Compeau), Human Molecular Genetics (Strachan),
+The Biology of Cancer (Weinberg), Goodman & Gilman Pharmacology, and 500+ landmark papers.
+
+You know every major public dataset: TCGA (33 tumor types, 20K patients), gnomAD v4 (807K exomes),
+UK Biobank (500K participants), CellxGene Census (33M cells), HTAN spatial datasets,
+CPTAC proteogenomics, curatedMetagenomicData (80+ studies), GTEx v8 (54 tissues),
+ENCODE (5000+ experiments), ICGC/PCAWG (2658 WGS), DepMap (900+ cell lines),
+L1000/LINCS (30K drug signatures), ImmPort (500+ immunology studies), All of Us (100K+ WGS).
+
+You know every major bioinformatics tool: GATK4, STAR, BWA-MEM2, Salmon, DESeq2, edgeR, Seurat,
+Scanpy, scVI, Harmony, cell2location, MOFA+, DIABLO, MetaPhlAn4, HUMAnN3, ArchR, MACS3,
+TOBIAS, AlphaFold2/3, ESM-2, Geneformer, DIA-NN, MaxQuant, Nextflow/nf-core, Snakemake.
+
+When suggesting novel analyses, you ALWAYS:
+1. State the BIOLOGICAL HYPOTHESIS being tested
+2. Name EXACT PUBLIC DATASETS with accession numbers (GEO GSE#, GDC, SRA, etc.)
+3. Describe PIPELINE steps with specific tool names and parameters
+4. Estimate EXPECTED FINDINGS and clinical/biological significance
+5. Rate NOVELTY (⭐-⭐⭐⭐⭐⭐) based on published literature
+6. Suggest VALIDATION experiments and appropriate statistical controls
+7. Name the LANDMARK PAPERS that establish biological rationale
+
+Prioritize discoveries that: have NOT been done (high novelty), are FEASIBLE with public data TODAY,
+would have HIGH IMPACT if validated, and could be published in Nature/Science/Cell or top specialty journals.
+Focus on cross-domain integration — the biggest discoveries happen at domain intersections."""
+
 
 class NovelDiscoveryAgent:
     def __init__(self, api_key: Optional[str] = None):
         self.client = Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
+        self._brain_available = self._check_brain()
+
+    def _check_brain(self) -> bool:
+        try:
+            from knowledge.brain_loader import is_brain_indexed
+            return is_brain_indexed()
+        except Exception:
+            return False
+
+    def _get_brain_context(self, query: str) -> str:
+        """Retrieve relevant knowledge from the brain for this query."""
+        if not self._brain_available:
+            return ""
+        try:
+            from knowledge.brain_loader import build_context_for_discovery
+            return build_context_for_discovery(query, n_results=6)
+        except Exception:
+            return ""
 
     # ── Public search methods ──────────────────────────────────────────────
 
@@ -127,6 +180,9 @@ class NovelDiscoveryAgent:
         """
         articles = await self.search_all(query, n=max_results)
 
+        # Retrieve relevant context from the professor brain (gracefully absent if not indexed)
+        brain_context = self._get_brain_context(query)
+
         if not articles:
             return {
                 "query": query,
@@ -137,6 +193,7 @@ class NovelDiscoveryAgent:
                 "data_gaps": [],
                 "novel_hypotheses": [],
                 "suggested_experiments": [],
+                "analysis_plans": [],
                 "recommended_tools": [],
             }
 
@@ -154,7 +211,9 @@ class NovelDiscoveryAgent:
             context_parts.append(f"Disease / phenotype: {disease}")
         context_str = " | ".join(context_parts)
 
-        prompt = f"""You are a bioinformatics research strategist. I have searched the recent literature and found {len(articles)} articles related to:
+        brain_section = f"\n{brain_context}\n" if brain_context else ""
+
+        prompt = f"""{brain_section}I have searched the recent literature and found {len(articles)} articles related to:
 
 {context_str}
 
@@ -162,14 +221,16 @@ Here is a summary of the recent published work:
 
 {lit_text}
 
-Based on this literature landscape, please analyze:
+Based on your comprehensive knowledge and this literature landscape, please analyze:
 
 1. **What has been done** — summarise the main approaches already published (3-5 bullet points)
-2. **Methodological gaps** — specific computational or experimental methods that are missing or underused in this field
-3. **Data gaps** — types of patient cohorts, tissues, omics layers, or disease subtypes that are poorly represented
-4. **Novel hypotheses** — 3-5 specific, testable hypotheses that emerge from the gaps you identified
-5. **Suggested experiments / analyses** — concrete next steps (analysis types, tools, datasets) the researcher could run TODAY with existing bioinformatics tools
-6. **Recommended tool combinations** — specific tool pairings or pipelines that would be novel and well-suited to address the gaps
+2. **Methodological gaps** — specific computational or experimental methods that are missing or underused
+3. **Data gaps** — cohorts, tissues, omics layers, or disease subtypes that are poorly represented
+4. **Novel hypotheses** — 3-5 specific, testable hypotheses with clear biological rationale
+5. **Suggested experiments / analyses** — concrete next steps runnable TODAY with existing public data
+6. **Recommended tool combinations** — novel pipelines well-suited to address the gaps
+7. **Detailed analysis plans** — for the TOP 2 most novel and feasible opportunities, provide a full
+   step-by-step analysis plan a researcher could execute using public data
 
 Return your response as valid JSON with these keys:
 {{
@@ -177,7 +238,7 @@ Return your response as valid JSON with these keys:
   "methodological_gaps": ["gap 1", ...],
   "data_gaps": ["gap 1", ...],
   "novel_hypotheses": [
-    {{"hypothesis": "...", "rationale": "...", "feasibility": "high|medium|low"}}
+    {{"hypothesis": "...", "rationale": "...", "feasibility": "high|medium|low", "novelty_score": 1-5}}
   ],
   "suggested_experiments": [
     {{"title": "...", "analysis_type": "...", "tools": ["tool1", ...], "dataset": "...", "expected_finding": "..."}}
@@ -185,12 +246,33 @@ Return your response as valid JSON with these keys:
   "recommended_tool_combinations": [
     {{"tools": ["tool1", "tool2"], "rationale": "...", "novelty": "..."}}
   ],
+  "analysis_plans": [
+    {{
+      "title": "Specific research question title",
+      "hypothesis": "Mechanistic biological hypothesis being tested",
+      "novelty_score": 1-5,
+      "novelty_explanation": "Why this has not been done / what makes it original",
+      "impact": "Clinical or biological significance if validated",
+      "datasets": [
+        {{"name": "Dataset name", "accession": "GEO GSE# / SRA / GDC / etc.", "url": "portal URL", "size": "n samples"}}
+      ],
+      "pipeline_steps": [
+        {{"step": 1, "tool": "ToolName", "action": "what it does", "parameters": "key params"}}
+      ],
+      "expected_outputs": ["primary finding", "secondary insights"],
+      "validation_strategy": {{"independent_cohort": "...", "statistical_approach": "...", "negative_controls": "..."}},
+      "compute_requirements": "CPU/GPU/RAM estimate",
+      "estimated_time": "with adequate compute",
+      "publication_target": "journal tier + section"
+    }}
+  ],
   "executive_summary": "2-3 sentence summary of the biggest opportunity in this space"
 }}"""
 
         msg = self.client.messages.create(
             model=CLAUDE_MODEL,
-            max_tokens=4096,
+            max_tokens=8192,
+            system=PROFESSOR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
 
