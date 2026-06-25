@@ -39,6 +39,17 @@ export default function DiscoveryPage() {
   const [moLoading, setMoLoading] = useState(false);
   const [moResult, setMoResult] = useState<any>(null);
 
+  // Pipeline Architect
+  const [pipeQuestion, setPipeQuestion] = useState("");
+  const [pipeDisease, setPipeDisease] = useState("");
+  const [pipeGoal, setPipeGoal] = useState("");
+  const [pipeDataTypes, setPipeDataTypes] = useState<string[]>([]);
+  const [pipeLoading, setPipeLoading] = useState(false);
+  const [pipeResult, setPipeResult] = useState<any>(null);
+  const [pipeError, setPipeError] = useState<string | null>(null);
+  const [pipeTab, setPipeTab] = useState<"snakefile" | "config" | "env" | "readme">("snakefile");
+  const [pipeCopied, setPipeCopied] = useState(false);
+
   async function handleDiscover() {
     if (!query) return;
     setLoading(true); setError(null); setResult(null);
@@ -188,6 +199,41 @@ export default function DiscoveryPage() {
     const layers = multiOmicsLayers.split(",").map(s => s.trim()).filter(Boolean);
     setMoResult(buildMultiOmicsStrategy(layers, multiOmicsDisease || "your disease"));
     setMoLoading(false);
+  }
+
+  async function handleGeneratePipeline() {
+    if (!pipeQuestion) return;
+    setPipeLoading(true); setPipeError(null); setPipeResult(null);
+    try {
+      const res = await fetch(`${BASE}/api/pipelines/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: pipeQuestion,
+          data_types: pipeDataTypes,
+          disease: pipeDisease || undefined,
+          goal: pipeGoal || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`Backend returned ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      setPipeResult(data);
+      setPipeTab("snakefile");
+    } catch (e: any) {
+      setPipeError(`Pipeline generation failed: ${e.message}. Make sure the backend is running at ${BASE}.`);
+    } finally {
+      setPipeLoading(false);
+    }
+  }
+
+  function toggleDataType(t: string) {
+    setPipeDataTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+
+  async function copyCode(text: string) {
+    await navigator.clipboard.writeText(text);
+    setPipeCopied(true);
+    setTimeout(() => setPipeCopied(false), 2000);
   }
 
   const QUICK_LINKS = [
@@ -664,6 +710,263 @@ export default function DiscoveryPage() {
             </div>
           )}
         </section>
+
+        {/* ── Pipeline Architect ──────────────────────────────────────────── */}
+        <section className="pt-8" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="flex items-start gap-3 mb-2">
+            <div>
+              <h2 className="font-semibold text-lg" style={{ color: "var(--text)" }}>
+                Pipeline Architect
+              </h2>
+              <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
+                Describe your scientific question. The AI designs and writes a complete,
+                runnable Snakemake pipeline — combining whatever data types are needed
+                to answer it and make a novel discovery.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 mt-4">
+            {/* Question */}
+            <div>
+              <label className="block text-xs mb-1 font-medium" style={{ color: "var(--muted)" }}>
+                Scientific question *
+              </label>
+              <textarea
+                value={pipeQuestion}
+                onChange={e => setPipeQuestion(e.target.value)}
+                rows={3}
+                placeholder="e.g. Do tertiary lymphoid structures in NSCLC predict anti-PD1 response? Combine spatial transcriptomics + scRNA-seq + clinical outcomes."
+                className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none resize-none"
+                style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }}
+              />
+            </div>
+
+            {/* Data type picker */}
+            <div>
+              <label className="block text-xs mb-2 font-medium" style={{ color: "var(--muted)" }}>
+                Data types you have (or want to combine)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {["rnaseq","scrnaseq","wgs","wes","atacseq","chipseq","methylation",
+                  "spatial","proteomics","microbiome","ctdna","multiomics","riboseq","immune_profiling"].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => toggleDataType(t)}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+                    style={pipeDataTypes.includes(t)
+                      ? { background: "var(--flame)", color: "#fff" }
+                      : { background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" }
+                    }>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Disease + Goal */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Disease / phenotype</label>
+                <input value={pipeDisease} onChange={e => setPipeDisease(e.target.value)}
+                  placeholder="e.g. NSCLC, ALS, colorectal cancer"
+                  className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none"
+                  style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Analysis goal (optional)</label>
+                <input value={pipeGoal} onChange={e => setPipeGoal(e.target.value)}
+                  placeholder="e.g. biomarker discovery, drug target nomination"
+                  className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none"
+                  style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+              </div>
+            </div>
+
+            <button
+              onClick={handleGeneratePipeline}
+              disabled={pipeLoading || !pipeQuestion}
+              className="px-6 py-3 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40 flex items-center gap-2"
+              style={{ background: "var(--flame)", color: "#fff" }}>
+              {pipeLoading ? (
+                <>
+                  <span className="w-4 h-4 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "#fff4", borderTopColor: "#fff" }} />
+                  AI is writing your pipeline…
+                </>
+              ) : "Generate Pipeline →"}
+            </button>
+          </div>
+
+          {pipeError && (
+            <div className="mt-4 rounded-lg p-4 text-sm"
+              style={{ background: "#fff0f0", border: "1px solid #f5c0c0", color: "#c0392b" }}>
+              {pipeError}
+            </div>
+          )}
+
+          {pipeResult && (
+            <div className="mt-6 space-y-5">
+              {/* Header */}
+              <div className="rounded-2xl p-5"
+                style={{ background: "var(--surface)", border: "2px solid var(--flame)" }}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 className="font-semibold text-base" style={{ color: "var(--text)" }}>{pipeResult.title}</h3>
+                    <p className="text-xs mt-1 font-mono" style={{ color: "var(--muted)" }}>{pipeResult.name}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {pipeResult.data_types_combined?.map((t: string) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded"
+                        style={{ background: "#edf4fb", color: "var(--flame)" }}>{t}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {pipeResult.biological_hypothesis && (
+                  <div className="mt-3 rounded-lg p-3" style={{ background: "#edf4fb", border: "1px solid #c7dff5" }}>
+                    <p className="text-xs font-semibold" style={{ color: "var(--flame)" }}>Hypothesis</p>
+                    <p className="text-sm mt-0.5" style={{ color: "var(--text)" }}>{pipeResult.biological_hypothesis}</p>
+                  </div>
+                )}
+
+                {pipeResult.novelty && (
+                  <p className="text-xs mt-3" style={{ color: "var(--muted)" }}>
+                    <span className="font-semibold" style={{ color: "var(--amber)" }}>Novelty: </span>
+                    {pipeResult.novelty}
+                  </p>
+                )}
+
+                {/* Tools used */}
+                {pipeResult.tools_used?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {pipeResult.tools_used.map((t: string) => (
+                      <span key={t} className="text-xs px-2 py-0.5 rounded font-mono"
+                        style={{ background: "#f3f0e8", color: "var(--flame)" }}>{t}</span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Meta row */}
+                <div className="flex flex-wrap gap-4 mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+                  {pipeResult.estimated_runtime && (
+                    <span className="text-xs" style={{ color: "var(--muted)" }}>Runtime: {pipeResult.estimated_runtime}</span>
+                  )}
+                  {pipeResult.compute_requirements?.min_ram_gb && (
+                    <span className="text-xs" style={{ color: "var(--muted)" }}>
+                      Min RAM: {pipeResult.compute_requirements.min_ram_gb}GB
+                    </span>
+                  )}
+                  {pipeResult.compute_requirements?.min_cores && (
+                    <span className="text-xs" style={{ color: "var(--muted)" }}>
+                      Min cores: {pipeResult.compute_requirements.min_cores}
+                    </span>
+                  )}
+                  {pipeResult.saved_path && (
+                    <span className="text-xs font-mono" style={{ color: "var(--muted)" }}>
+                      Saved: {pipeResult.saved_path}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Explanation */}
+              {pipeResult.explanation && (
+                <div className="rounded-xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                  <p className="text-xs font-semibold mb-2" style={{ color: "var(--text)" }}>Scientific rationale</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--muted)" }}>
+                    {pipeResult.explanation}
+                  </p>
+                </div>
+              )}
+
+              {/* Code tabs */}
+              {(pipeResult.snakefile || pipeResult.config_yaml) && (
+                <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                  {/* Tab bar */}
+                  <div className="flex" style={{ background: "#1e1e2e", borderBottom: "1px solid #333" }}>
+                    {(["snakefile","config","env","readme"] as const).map(tab => {
+                      const labels: Record<string, string> = {
+                        snakefile: "Snakefile",
+                        config: "config.yaml",
+                        env: "environment.yaml",
+                        readme: "README.md",
+                      };
+                      const content: Record<string, string> = {
+                        snakefile: pipeResult.snakefile,
+                        config: pipeResult.config_yaml,
+                        env: pipeResult.environment_yaml,
+                        readme: pipeResult.readme,
+                      };
+                      if (!content[tab]) return null;
+                      return (
+                        <button key={tab} onClick={() => setPipeTab(tab)}
+                          className="px-4 py-2.5 text-xs font-mono transition-colors"
+                          style={pipeTab === tab
+                            ? { background: "#2d2d44", color: "#e2e8f0", borderBottom: "2px solid var(--flame)" }
+                            : { color: "#888", borderBottom: "2px solid transparent" }
+                          }>
+                          {labels[tab]}
+                        </button>
+                      );
+                    })}
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => {
+                        const content: Record<string, string> = {
+                          snakefile: pipeResult.snakefile,
+                          config: pipeResult.config_yaml,
+                          env: pipeResult.environment_yaml,
+                          readme: pipeResult.readme,
+                        };
+                        copyCode(content[pipeTab] || "");
+                      }}
+                      className="px-4 py-2.5 text-xs transition-colors"
+                      style={{ color: pipeCopied ? "#4ade80" : "#888" }}>
+                      {pipeCopied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  {/* Code content */}
+                  <pre className="p-4 text-xs overflow-auto max-h-96 leading-relaxed"
+                    style={{ background: "#1e1e2e", color: "#e2e8f0", fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {pipeTab === "snakefile" && pipeResult.snakefile}
+                    {pipeTab === "config" && pipeResult.config_yaml}
+                    {pipeTab === "env" && pipeResult.environment_yaml}
+                    {pipeTab === "readme" && pipeResult.readme}
+                  </pre>
+                </div>
+              )}
+
+              {/* Run instructions */}
+              {pipeResult.run_command && (
+                <div className="rounded-xl p-4" style={{ background: "#1e1e2e" }}>
+                  <p className="text-xs mb-2" style={{ color: "#888" }}>Run this pipeline locally:</p>
+                  <pre className="text-xs" style={{ color: "#4ade80", fontFamily: "monospace" }}>
+{`cd ${pipeResult.saved_path || `work/generated/${pipeResult.name}`}
+conda env create -f environment.yaml
+conda activate ${pipeResult.name}
+${pipeResult.run_command}`}
+                  </pre>
+                </div>
+              )}
+
+              {/* Expected outputs */}
+              {pipeResult.expected_outputs?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold mb-2" style={{ color: "var(--text)" }}>Expected outputs</p>
+                  <div className="flex flex-wrap gap-2">
+                    {pipeResult.expected_outputs.map((o: string, i: number) => (
+                      <span key={i} className="text-xs px-2 py-1 rounded font-mono"
+                        style={{ background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}>
+                        {o}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         </div>{/* end left column */}
 
         {/* ── Right column: auth panel ──────────────────────────────────── */}

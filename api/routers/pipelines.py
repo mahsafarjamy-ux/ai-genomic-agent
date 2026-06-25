@@ -1,7 +1,9 @@
 import json
 import uuid
 from pathlib import Path
+from typing import Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from api.models.schemas import PipelineDefinition, AnalysisType
 
 router = APIRouter()
@@ -9,6 +11,13 @@ router = APIRouter()
 TEMPLATE_DIR = Path(__file__).parent.parent.parent / "core" / "pipelines"
 
 _pipeline_store: dict = {}
+
+
+class PipelineGenerateRequest(BaseModel):
+    question: str
+    data_types: list[str] = []
+    disease: Optional[str] = None
+    goal: Optional[str] = None
 
 
 @router.get("/templates")
@@ -75,6 +84,33 @@ async def get_config_schema(analysis_type: str):
     if not schema:
         raise HTTPException(404, f"No schema for analysis type: {analysis_type}")
     return schema
+
+
+@router.post("/generate")
+async def generate_pipeline(req: PipelineGenerateRequest):
+    """
+    Generate a complete, novel Snakemake pipeline for a scientific question.
+    Claude architects the pipeline combining the requested data types.
+    No genomic data is involved — only the question text reaches Claude.
+    """
+    from core.agents.pipeline_architect_agent import generate_pipeline as _generate
+    try:
+        result = _generate(
+            question=req.question,
+            data_types=req.data_types,
+            disease=req.disease,
+            goal=req.goal,
+        )
+        _pipeline_store[result["pipeline_id"]] = result
+        return result
+    except Exception as exc:
+        raise HTTPException(500, f"Pipeline generation failed: {exc}")
+
+
+@router.get("/generated")
+async def list_generated_pipelines():
+    """List all AI-generated pipelines from this session."""
+    return list(_pipeline_store.values())
 
 
 @router.get("/{pipeline_id}")
