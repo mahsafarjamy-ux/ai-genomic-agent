@@ -14,3 +14,4 @@ uploads/
 work/
 results/
 core/pipelines/*/.snakemake/
+knowledge/.chroma_db/
