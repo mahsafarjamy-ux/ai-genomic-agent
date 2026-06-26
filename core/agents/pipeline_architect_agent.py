@@ -49,12 +49,40 @@ The pipeline must work if the user has the input data and conda installed."""
 
 
 # ------------------------------------------------------------------
-# Helper: retrieve brain context for the question
+# Helper: retrieve brain context (biological + engineering) for the question
 # ------------------------------------------------------------------
-def _get_brain_context(question: str) -> str:
+def _get_brain_context(question: str, tools_hint: list[str] = None) -> str:
     try:
-        from knowledge.brain_loader import build_context_for_discovery
-        return build_context_for_discovery(question, n_results=5)
+        from knowledge.brain_loader import build_context_for_discovery, retrieve
+        # Biology context
+        bio_ctx = build_context_for_discovery(question, n_results=4)
+
+        # Engineering context — query specifically for relevant tools/workflows
+        eng_query = f"pipeline engineering workflow {' '.join(tools_hint or [])} {question[:200]}"
+        eng_chunks = retrieve(eng_query, n_results=5)
+        # Filter to engineering knowledge only (higher signal)
+        eng_chunks = [c for c in eng_chunks if "engineering" in c.get("source", "").lower()
+                      or "github_repos" in c.get("source", "").lower()]
+        if eng_chunks:
+            eng_parts = ["=== PIPELINE ENGINEERING KNOWLEDGE ===\n"]
+            for i, chunk in enumerate(eng_chunks[:4], 1):
+                eng_parts.append(
+                    f"[{i}] {chunk['source']} / {chunk['section']}\n"
+                    f"{chunk['text'][:500]}...\n"
+                )
+            eng_parts.append("=== END ENGINEERING KNOWLEDGE ===\n")
+            eng_ctx = "\n".join(eng_parts)
+        else:
+            eng_ctx = ""
+
+        # Skill context — K-Dense-AI scientific agent skills
+        try:
+            from knowledge.brain_loader import build_skill_context
+            skill_ctx = build_skill_context(question, n_results=4)
+        except Exception:
+            skill_ctx = ""
+
+        return "\n".join(filter(None, [bio_ctx, eng_ctx, skill_ctx]))
     except Exception:
         return ""
 
@@ -77,7 +105,7 @@ def generate_pipeline(
       explanation, tools, data_types, saved_path
     """
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    brain_context = _get_brain_context(question)
+    brain_context = _get_brain_context(question, tools_hint=data_types)
 
     # Build the context section
     brain_section = f"\n{brain_context}\n" if brain_context else ""

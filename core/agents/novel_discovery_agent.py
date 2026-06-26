@@ -73,8 +73,10 @@ class NovelDiscoveryAgent:
         if not self._brain_available:
             return ""
         try:
-            from knowledge.brain_loader import build_context_for_discovery
-            return build_context_for_discovery(query, n_results=6)
+            from knowledge.brain_loader import build_context_for_discovery, build_skill_context
+            bio_ctx   = build_context_for_discovery(query, n_results=5)
+            skill_ctx = build_skill_context(query, n_results=3)
+            return "\n".join(filter(None, [bio_ctx, skill_ctx]))
         except Exception:
             return ""
 

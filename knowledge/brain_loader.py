@@ -71,7 +71,27 @@ def index_all():
 
     collection = get_collection()
 
-    md_files = list(KNOWLEDGE_DIR.rglob("*.md"))
+    # Collect markdown files — all .md files, but:
+    #   • skip hidden dirs (.chroma_db, .git, etc.)
+    #   • skip .venv
+    #   • for skills/, only index SKILL.md (not auxiliary scripts/configs)
+    all_md = [
+        f for f in KNOWLEDGE_DIR.rglob("*.md")
+        if not any(part.startswith(".") for part in f.parts)
+        and ".venv" not in f.parts
+    ]
+    skills_dir = KNOWLEDGE_DIR / "skills"
+    md_files = []
+    for f in all_md:
+        try:
+            rel = f.relative_to(skills_dir)
+            # inside skills/ — only keep SKILL.md at depth 1 (skills/{name}/SKILL.md)
+            if f.name == "SKILL.md" and len(rel.parts) == 2:
+                md_files.append(f)
+        except ValueError:
+            # not inside skills/ — keep it
+            md_files.append(f)
+
     print(f"Found {len(md_files)} knowledge files to index")
 
     all_chunks  = []
@@ -165,6 +185,26 @@ def build_context_for_discovery(query: str, n_results: int = 6) -> str:
 
     context_parts.append("=== END BRAIN CONTEXT ===\n")
     return "\n".join(context_parts)
+
+
+def retrieve_skills(query: str, n_results: int = 6) -> list[dict]:
+    """Retrieve the most relevant scientific skill definitions for a query."""
+    chunks = retrieve(query, n_results=n_results * 3)  # over-fetch then filter
+    skill_chunks = [c for c in chunks if "skills/" in c.get("source", "")]
+    return skill_chunks[:n_results]
+
+
+def build_skill_context(query: str, n_results: int = 5) -> str:
+    """Build a context string of relevant skill instructions for the pipeline architect."""
+    chunks = retrieve_skills(query, n_results=n_results)
+    if not chunks:
+        return ""
+    parts = ["=== SCIENTIFIC SKILL INSTRUCTIONS (from K-Dense-AI/scientific-agent-skills) ===\n"]
+    for i, c in enumerate(chunks, 1):
+        skill_name = c["source"].split("/")[1] if "/" in c["source"] else c["source"]
+        parts.append(f"[{i}] SKILL: {skill_name}\n{c['text'][:700]}...\n")
+    parts.append("=== END SKILL INSTRUCTIONS ===\n")
+    return "\n".join(parts)
 
 
 def is_brain_indexed() -> bool:
