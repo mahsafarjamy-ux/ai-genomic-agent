@@ -9,9 +9,13 @@ __pycache__/
 node_modules/
 .next/
 .DS_Store
+**/.DS_Store
 *.db
 uploads/
 work/
 results/
 core/pipelines/*/.snakemake/
 knowledge/.chroma_db/
+recovery-codes-vercel.txt
+test-data/sample_23andme.txt
+web/.vercel/
