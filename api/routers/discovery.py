@@ -4,13 +4,21 @@ Searches PubMed + bioRxiv and uses Claude to identify research gaps.
 No genomic data is involved — only article metadata reaches Claude.
 """
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel
+import uuid
+from fastapi import APIRouter, Query, HTTPException
+from pydantic import BaseModel, Field
 from typing import Optional
 from core.agents.novel_discovery_agent import NovelDiscoveryAgent
+from core.agents.critic_agent import CriticAgent
+from core.persistence import CriticRepository
+from core.agents.cost_reuse_planner import CostReusePlanner
 
 router = APIRouter()
 agent = NovelDiscoveryAgent()
+critic_agent = CriticAgent()
+reuse_planner = CostReusePlanner()
+_critic_store: dict[str, dict] = {}
+_critic_repo = CriticRepository()
 
 
 class GapDiscoveryRequest(BaseModel):
@@ -23,6 +31,95 @@ class GapDiscoveryRequest(BaseModel):
 class MultiOmicsRequest(BaseModel):
     omics_layers: list[str]
     disease: str
+
+
+class CriticReviewRequest(BaseModel):
+    """Evidence package sent by an analysis section to the critic."""
+    claim: str
+    analysis_id: Optional[str] = None
+    analysis_type: Optional[str] = None
+    metrics: dict = Field(default_factory=dict)
+    datasets: list[dict] = Field(default_factory=list)
+    methods: list[dict] = Field(default_factory=list)
+    results_artifacts: list[str] = Field(default_factory=list)
+    human_review_required: bool = True
+
+
+class CriticAnswerRequest(BaseModel):
+    """New evidence supplied after the critic requests more work."""
+    evidence: dict = Field(default_factory=dict)
+    comment: Optional[str] = ""
+
+
+class CostReusePlanRequest(BaseModel):
+    """Inputs used to avoid duplicating an already reproducible analysis."""
+    request: dict = Field(default_factory=dict)
+    catalog: list[dict] = Field(default_factory=list)
+    compute_options: dict[str, dict] = Field(default_factory=dict)
+
+
+@router.post("/cost-reuse-plan")
+async def cost_reuse_plan(req: CostReusePlanRequest):
+    """Select an existing artifact or the cheapest valid compute route."""
+    return reuse_planner.plan(req.request, req.catalog, req.compute_options)
+
+
+@router.post("/critic/review")
+async def critic_review(req: CriticReviewRequest):
+    """Run reproducibility and statistics gates over an analysis result.
+
+    This endpoint never calls an LLM and never approves a clinical finding.
+    It returns explicit requests that the analysis section can satisfy.
+    """
+    try:
+        result = critic_agent.review(req.model_dump())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    review_id = str(uuid.uuid4())
+    result["review_id"] = review_id
+    result["analysis_id"] = req.analysis_id
+    record = {"request": req.model_dump(), "result": result, "history": []}
+    _critic_store[review_id] = record
+    _critic_repo.create(review_id, req.analysis_id or "", record)
+    return result
+
+
+@router.get("/critic/{review_id}")
+async def get_critic_review(review_id: str):
+    review = _critic_store.get(review_id)
+    if not review:
+        review = _critic_repo.get(review_id)
+    if not review:
+        raise HTTPException(404, "Critic review not found")
+    return review["result"]
+
+
+@router.post("/critic/{review_id}/evidence")
+async def answer_critic_review(review_id: str, req: CriticAnswerRequest):
+    """Send a repeat, independent cohort, or metadata package back for review."""
+    review = _critic_store.get(review_id)
+    if not review:
+        review = _critic_repo.get(review_id)
+    if not review:
+        raise HTTPException(404, "Critic review not found")
+    original = review["request"]
+    evidence = req.evidence or {}
+    merged = {
+        **original,
+        "metrics": {**(original.get("metrics") or {}), **(evidence.get("metrics") or {})},
+        "datasets": [*(original.get("datasets") or []), *(evidence.get("datasets") or [])],
+        "methods": [*(original.get("methods") or []), *(evidence.get("methods") or [])],
+        "results_artifacts": [*(original.get("results_artifacts") or []), *(evidence.get("results_artifacts") or [])],
+    }
+    result = critic_agent.review(merged)
+    result["review_id"] = review_id
+    result["analysis_id"] = original.get("analysis_id")
+    review["request"] = merged
+    review["result"] = result
+    review["history"].append({"comment": req.comment, "evidence": evidence, "result": result})
+    _critic_store[review_id] = review
+    _critic_repo.update(review_id, review)
+    return result
 
 
 @router.post("/gaps")

@@ -19,6 +19,8 @@ export default function JobMonitor({ articleId, onComplete }: Props) {
   const [fixProposal, setFixProposal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [criticResult, setCriticResult] = useState<any>(null);
+  const [criticLoading, setCriticLoading] = useState(false);
   const logsRef = useRef<HTMLDivElement>(null);
 
   // Poll job status
@@ -80,6 +82,14 @@ export default function JobMonitor({ articleId, onComplete }: Props) {
     if (!jobId) return;
     await api.approveFix(jobId, approved, approved ? "Approved" : "Rejected");
     setFixProposal(null);
+  }
+
+  async function handleCriticReview() {
+    if (!jobId) return;
+    setCriticLoading(true);
+    try { setCriticResult(await api.criticReviewJob(jobId)); }
+    catch (e: any) { setError(`Evidence critic failed: ${e.message}`); }
+    finally { setCriticLoading(false); }
   }
 
   const statusColor: Record<string, string> = {
@@ -193,6 +203,30 @@ export default function JobMonitor({ articleId, onComplete }: Props) {
                   ✗ Reject & Stop
                 </button>
               </div>
+            </div>
+          )}
+
+          {job.status === "completed" && (
+            <div className="bg-violet-950/30 border border-violet-700 rounded-xl p-5 space-y-3">
+              <div>
+                <h3 className="font-semibold text-violet-200">Evidence Critic</h3>
+                <p className="text-sm text-gray-400 mt-1">Check this completed analysis for QC, multiple testing, provenance, leakage, and independent replication.</p>
+              </div>
+              <button onClick={handleCriticReview} disabled={criticLoading}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 rounded-lg text-sm font-medium">
+                {criticLoading ? "Reviewing evidence…" : "Send to Evidence Critic →"}
+              </button>
+              {criticResult && (
+                <div className="space-y-2 text-sm">
+                  <p className="text-violet-100">{criticResult.decision}</p>
+                  <p className="text-gray-400">Score: {criticResult.overall_score}/100 · {criticResult.status.replaceAll("_", " ")}</p>
+                  {criticResult.requests?.map((request: any, i: number) => (
+                    <div key={i} className="rounded-lg bg-gray-950 p-3 text-xs text-gray-300">
+                      <span className="font-semibold text-violet-200">{request.type.replaceAll("_", " ")}</span> · {request.acceptance_criteria}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

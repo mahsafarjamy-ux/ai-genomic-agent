@@ -38,6 +38,7 @@ class GitHubCrawler:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         self.headers = headers
+        self.last_error: Optional[str] = None
 
     async def crawl_repo(self, github_url: str, output_dir: Path) -> dict:
         """
@@ -64,6 +65,8 @@ class GitHubCrawler:
         ) as client:
             # Get default branch
             repo_info = await self._api_get(client, f"repos/{owner}/{repo}")
+            if not repo_info:
+                return {**result, "error": self.last_error or "GitHub repository metadata could not be fetched"}
             default_branch = ref or (repo_info.get("default_branch", "main") if repo_info else "main")
 
             # Fetch README
@@ -129,8 +132,12 @@ class GitHubCrawler:
             r = await client.get(url)
             if r.status_code == 200:
                 return r.json()
+            if r.status_code == 403 and "rate limit" in r.text.lower():
+                self.last_error = "GitHub API rate limit exceeded; provide GITHUB_TOKEN or retry later"
+            else:
+                self.last_error = f"GitHub API returned HTTP {r.status_code} for {endpoint}"
         except Exception:
-            pass
+            self.last_error = f"GitHub API request failed for {endpoint}"
         return None
 
     async def _get_tree(self, client, owner, repo, branch, path="") -> list[str]:
@@ -148,6 +155,9 @@ class GitHubCrawler:
         for pattern in PIPELINE_FILE_PATTERNS:
             if re.match(pattern, filename, re.IGNORECASE):
                 return True
+        path_parts = {part.lower() for part in Path(path).parts[:-1]}
+        if path_parts.intersection({"pipeline", "pipelines", "analysis", "analyses", "scripts"}):
+            return filename.lower().endswith((".r", ".rmd", ".py", ".sh", ".nf", ".smk", ".yaml", ".yml"))
         return False
 
     async def _fetch_file(self, client, owner, repo, path, branch) -> Optional[str]:

@@ -53,7 +53,10 @@ Return JSON:
 
 class PublicDataAgent:
     def __init__(self, api_key: Optional[str] = None):
-        self.client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
+        # Public repository search is useful in local mode. Only the optional
+        # natural-language recommendation step requires an Anthropic key.
+        resolved_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.client = anthropic.Anthropic(api_key=resolved_key) if resolved_key else None
         self.ncbi_key = (
             os.environ.get("NCBI_API_KEY")
             or os.environ.get("PUBMED_API_KEY")
@@ -104,23 +107,42 @@ class PublicDataAgent:
             available_databases=json.dumps(db_summaries, indent=2),
         )
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        if self.client is None:
+            recommendations = {
+                "primary_controls": [
+                    {
+                        "database": db_id,
+                        "name": summary["name"],
+                        "accession": "",
+                        "why_recommended": summary.get("best_for", "Registry match"),
+                        "n_samples": summary.get("n_samples"),
+                    }
+                    for db_id, summary in db_summaries.items()
+                ],
+                "secondary_controls": [],
+                "disease_comparison_cohorts": [],
+                "meta_analysis_resources": [],
+                "gap_in_available_data": "LLM synthesis is unavailable without ANTHROPIC_API_KEY.",
+                "llm_required": True,
+            }
+        else:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-        import re
-        content = response.content[0].text.strip()
-        content = re.sub(r'^```[a-z]*\n?', '', content)
-        content = re.sub(r'\n?```$', '', content)
+            import re
+            content = response.content[0].text.strip()
+            content = re.sub(r'^```[a-z]*\n?', '', content)
+            content = re.sub(r'\n?```$', '', content)
 
-        try:
-            recommendations = json.loads(content)
-        except json.JSONDecodeError:
-            match = re.search(r'\{[\s\S]+\}', content)
-            recommendations = json.loads(match.group()) if match else {}
+            try:
+                recommendations = json.loads(content)
+            except json.JSONDecodeError:
+                match = re.search(r'\{[\s\S]+\}', content)
+                recommendations = json.loads(match.group()) if match else {}
 
         # Enrich with live search results from GEO and other APIs
         geo_results = await self._search_geo(analysis_type, disease_context, n=10)

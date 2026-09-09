@@ -4,10 +4,12 @@ from fastapi.responses import HTMLResponse, FileResponse
 from api.models.schemas import ReportRequest, ReportResponse
 from api.routers.jobs import _job_store
 from api.routers.articles import _article_store
+from core.agents.critic_agent import CriticAgent
 
 router = APIRouter()
 
 _report_store: dict = {}
+_critic_agent = CriticAgent()
 
 
 @router.post("/generate", response_model=ReportResponse)
@@ -41,6 +43,41 @@ async def generate_report(request: ReportRequest):
         pdf_path=result.get("pdf"),
         qc_status=result["qc_status"],
     )
+
+
+@router.post("/{job_id}/critic-review")
+async def critic_review_job(job_id: str, claim: str | None = None):
+    """Send a completed analysis job's evidence envelope to the critic.
+
+    The endpoint intentionally supplies local paths and QC summaries only. It
+    does not upload genomic data, and a missing accession or replication cohort
+    becomes an explicit request in the critic response.
+    """
+    job = _job_store.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job["status"] != "completed":
+        raise HTTPException(400, "Job must be completed before critic review")
+    results_dir = Path(job["results_dir"])
+    qc_metrics = _collect_qc_metrics(results_dir)
+    pipeline = _article_store.get(job["pipeline_id"], {})
+    methods = [
+        {"tool": step.get("tool"), "version": step.get("version"), "parameters": step.get("parameters", {})}
+        for step in pipeline.get("steps", [])
+        if step.get("tool")
+    ]
+    result = _critic_agent.review({
+        "claim": claim or f"The {job['pipeline_id']} analysis contains a reproducible biological signal.",
+        "analysis_id": job_id,
+        "analysis_type": pipeline.get("analysis_type", job["pipeline_id"]),
+        "metrics": qc_metrics,
+        "datasets": [{"uri": job["data_dir"], "cohort": "discovery", "n_samples": len(job.get("samples", []))}],
+        "methods": methods,
+        "results_artifacts": [str(p) for p in results_dir.glob("**/*") if p.is_file()][:100],
+        "human_review_required": True,
+    })
+    result["analysis_id"] = job_id
+    return result
 
 
 @router.get("/{job_id}/html", response_class=HTMLResponse)

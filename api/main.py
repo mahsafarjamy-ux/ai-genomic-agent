@@ -35,7 +35,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+    allow_origins=[origin.strip() for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:3001,http://localhost:3002"
+    ).split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,8 +63,16 @@ app.include_router(billing.router,        prefix="/api/billing",             tag
 
 @app.get("/api/health")
 async def health():
+    database = "ok"
+    try:
+        from core.persistence import JobRepository
+        JobRepository().list()
+    except Exception as exc:
+        database = f"error: {exc.__class__.__name__}"
     return {
         "status": "ok",
         "version": "0.1.0",
-        "privacy_note": "Genomic data is never uploaded. All processing runs locally."
+        "database": database,
+        "execution_mode": os.getenv("JOB_EXECUTION_MODE", "local"),
+        "privacy_note": "Raw genomic data is not sent to an LLM; processing location is controlled by the deployment."
     }

@@ -58,7 +58,11 @@ Focus on cross-domain integration — the biggest discoveries happen at domain i
 
 class NovelDiscoveryAgent:
     def __init__(self, api_key: Optional[str] = None):
-        self.client = Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
+        # Literature search and the deterministic critic must work in local
+        # mode even when Claude is not configured. Claude is only required for
+        # the synthesis step inside ``discover_gaps``.
+        resolved_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.client = Anthropic(api_key=resolved_key) if resolved_key else None
         self._brain_available = self._check_brain()
 
     def _check_brain(self) -> bool:
@@ -197,6 +201,24 @@ class NovelDiscoveryAgent:
                 "suggested_experiments": [],
                 "analysis_plans": [],
                 "recommended_tools": [],
+            }
+
+        if self.client is None:
+            return {
+                "query": query,
+                "analysis_type": analysis_type,
+                "disease": disease,
+                "articles_found": len(articles),
+                "articles": articles[:10],
+                "executive_summary": "Literature was retrieved, but AI synthesis is unavailable because ANTHROPIC_API_KEY is not configured.",
+                "known_work": [],
+                "methodological_gaps": ["Configure an LLM provider before requesting automated synthesis."],
+                "data_gaps": [],
+                "novel_hypotheses": [],
+                "suggested_experiments": [],
+                "analysis_plans": [],
+                "recommended_tools": [],
+                "llm_required": True,
             }
 
         # Build a compact literature summary for Claude (titles + short abstracts only)

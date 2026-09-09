@@ -4,6 +4,7 @@ import { useState } from "react";
 import NavBar from "@/components/NavBar";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm, UserCard } from "@/components/AuthSidePanel";
+import { api } from "@/lib/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -49,6 +50,17 @@ export default function DiscoveryPage() {
   const [pipeError, setPipeError] = useState<string | null>(null);
   const [pipeTab, setPipeTab] = useState<"snakefile" | "config" | "env" | "readme">("snakefile");
   const [pipeCopied, setPipeCopied] = useState(false);
+
+  // Evidence critic
+  const [criticClaim, setCriticClaim] = useState("");
+  const [criticMetrics, setCriticMetrics] = useState("{}");
+  const [criticDatasets, setCriticDatasets] = useState("[]");
+  const [criticMethods, setCriticMethods] = useState("[]");
+  const [criticArtifacts, setCriticArtifacts] = useState("");
+  const [criticLoading, setCriticLoading] = useState(false);
+  const [criticResult, setCriticResult] = useState<any>(null);
+  const [criticError, setCriticError] = useState<string | null>(null);
+  const [criticEvidence, setCriticEvidence] = useState("{}");
 
   async function handleDiscover() {
     if (!query) return;
@@ -228,6 +240,38 @@ export default function DiscoveryPage() {
 
   function toggleDataType(t: string) {
     setPipeDataTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+
+  function parseJson(value: string, label: string) {
+    try { return JSON.parse(value || (label.endsWith("s") ? "[]" : "{}")); }
+    catch { throw new Error(`${label} must be valid JSON`); }
+  }
+
+  async function handleCriticReview() {
+    if (!criticClaim.trim()) return;
+    setCriticLoading(true); setCriticError(null); setCriticResult(null);
+    try {
+      const data = await api.criticReview({
+        claim: criticClaim.trim(),
+        analysis_type: analysisType || undefined,
+        metrics: parseJson(criticMetrics, "Metrics"),
+        datasets: parseJson(criticDatasets, "Datasets"),
+        methods: parseJson(criticMethods, "Methods"),
+        results_artifacts: criticArtifacts.split("\n").map(x => x.trim()).filter(Boolean),
+      });
+      setCriticResult(data);
+    } catch (e: any) { setCriticError(e.message); }
+    finally { setCriticLoading(false); }
+  }
+
+  async function handleCriticEvidence() {
+    if (!criticResult?.review_id) return;
+    setCriticLoading(true); setCriticError(null);
+    try {
+      const data = await api.answerCritic(criticResult.review_id, parseJson(criticEvidence, "Evidence"));
+      setCriticResult(data);
+    } catch (e: any) { setCriticError(e.message); }
+    finally { setCriticLoading(false); }
   }
 
   async function copyCode(text: string) {
@@ -578,6 +622,90 @@ export default function DiscoveryPage() {
             )}
           </div>
         )}
+
+        {/* Evidence Critic */}
+        <section className="pt-8" style={{ borderTop: "1px solid var(--border)" }}>
+          <h2 className="font-semibold text-lg mb-1" style={{ color: "var(--text)" }}>Evidence Critic</h2>
+          <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>
+            Send a claim and its evidence package through fixed statistical and reproducibility gates.
+            The critic can request a repeat, an independent cohort, more metadata, or human review.
+          </p>
+          <div className="space-y-3">
+            <textarea value={criticClaim} onChange={e => setCriticClaim(e.target.value)} rows={2}
+              placeholder="Claim to review, e.g. A cell-state signature predicts progression in pediatric medulloblastoma."
+              className="w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none resize-none"
+              style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                ["Metrics JSON", criticMetrics, setCriticMetrics, '{"n_samples": 96, "fdr_method": "BH", "fdr_threshold": 0.05, "effect_size": 1.4, "confidence_interval": [1.1, 1.8], "batch_confounding": false, "leakage_check": "passed", "qc_pass_rate": 0.98}'],
+                ["Datasets JSON", criticDatasets, setCriticDatasets, '[{"accession":"GSE123","cohort":"discovery","n_samples":64},{"accession":"GSE456","cohort":"replication","n_samples":32}]'],
+                ["Methods JSON", criticMethods, setCriticMethods, '[{"tool":"DESeq2","version":"1.42","parameters":{"design":"~ batch + group"}}]'],
+              ].map(([label, value, setter, placeholder]) => (
+                <div key={label as string}>
+                  <label className="block text-xs mb-1" style={{ color: "var(--muted)" }}>{label as string}</label>
+                  <textarea value={value as string} onChange={e => (setter as any)(e.target.value)} rows={5}
+                    placeholder={placeholder as string} className="w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none resize-none"
+                    style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+                </div>
+              ))}
+            </div>
+            <textarea value={criticArtifacts} onChange={e => setCriticArtifacts(e.target.value)} rows={2}
+              placeholder="Result artifact paths, one per line (QC report, statistics table, figures, manifest)"
+              className="w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none resize-none"
+              style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+            <button onClick={handleCriticReview} disabled={criticLoading || !criticClaim.trim()}
+              className="px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40"
+              style={{ background: "#7c3aed", color: "#fff" }}>
+              {criticLoading ? "Critic is checking evidence…" : "Run Evidence Critic →"}
+            </button>
+          </div>
+
+          {criticError && <div className="mt-3 rounded-lg p-3 text-xs" style={{ background: "#fff0f0", color: "#c0392b" }}>{criticError}</div>}
+          {criticResult && (
+            <div className="mt-5 rounded-2xl p-5 space-y-4" style={{ background: "var(--surface)", border: "2px solid #7c3aed" }}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#7c3aed" }}>Critic decision</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{criticResult.decision}</p>
+                </div>
+                <span className="text-lg font-bold" style={{ color: criticResult.overall_score >= 80 ? "#166534" : "#b45309" }}>{criticResult.overall_score}/100</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {criticResult.checks?.map((check: any) => (
+                  <div key={check.key} className="rounded-lg p-3" style={{ background: "var(--canvas)", border: "1px solid var(--border)" }}>
+                    <div className="flex justify-between gap-2"><span className="text-xs font-semibold" style={{ color: "var(--text)" }}>{check.label}</span><span className="text-xs" style={{ color: check.status === "pass" ? "#166534" : check.status === "fail" ? "#c0392b" : "#b45309" }}>{check.status}</span></div>
+                    <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{check.evidence}</p>
+                  </div>
+                ))}
+              </div>
+              {criticResult.requests?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold mb-2" style={{ color: "var(--text)" }}>Requests to the analysis section</p>
+                  <div className="space-y-2">{criticResult.requests.map((request: any, i: number) => (
+                    <div key={i} className="rounded-lg p-3" style={{ background: request.priority === "blocking" ? "#fff0f0" : "#fffbf0", border: "1px solid var(--border)" }}>
+                      <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>{request.type.replaceAll("_", " ")} · {request.priority}</p>
+                      <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{request.acceptance_criteria}</p>
+                    </div>
+                  ))}</div>
+                </div>
+              )}
+              <details>
+                <summary className="text-xs cursor-pointer" style={{ color: "#7c3aed" }}>Questions the critic wants answered</summary>
+                <ul className="mt-2 space-y-1">{criticResult.critic_questions?.map((q: string, i: number) => <li key={i} className="text-xs" style={{ color: "var(--muted)" }}>• {q}</li>)}</ul>
+              </details>
+              {criticResult.requests?.length > 0 && (
+                <div className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+                  <label className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Return new evidence JSON after rerunning the requested analysis</label>
+                  <textarea value={criticEvidence} onChange={e => setCriticEvidence(e.target.value)} rows={3}
+                    placeholder='{"metrics": {...}, "datasets": [...], "methods": [...], "results_artifacts": [...]}'
+                    className="w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none resize-none"
+                    style={{ background: "var(--canvas)", border: "1px solid var(--border)", color: "var(--text)" }} />
+                  <button onClick={handleCriticEvidence} disabled={criticLoading} className="mt-2 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-40" style={{ background: "#7c3aed", color: "#fff" }}>Submit evidence for re-review →</button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
 
         {/* Literature Search */}
         <section className="pt-8" style={{ borderTop: "1px solid var(--border)" }}>

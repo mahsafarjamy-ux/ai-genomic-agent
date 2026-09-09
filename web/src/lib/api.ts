@@ -62,6 +62,8 @@ export const api = {
 
   reportHtmlUrl: (jobId: string) => `${BASE}/api/reports/${jobId}/html`,
   reportPdfUrl: (jobId: string) => `${BASE}/api/reports/${jobId}/pdf`,
+  criticReviewJob: (jobId: string, claim?: string) =>
+    req<any>(`/api/reports/${jobId}/critic-review${claim ? `?claim=${encodeURIComponent(claim)}` : ""}`, { method: "POST" }),
 
   // Tool Recommender
   recommendTools: (payload: {
@@ -124,4 +126,29 @@ export const api = {
 
   searchLiterature: (query: string, source?: string) =>
     req<any[]>(`/api/discovery/literature?query=${encodeURIComponent(query)}&source=${source || "all"}`),
+
+  // Cost and reuse planner — call before submitting an analysis job
+  planCostReuse: (payload: {
+    request: Record<string, any>;
+    catalog?: Array<Record<string, any>>;
+    compute_options?: Record<string, Record<string, any>>;
+  }) => req<any>("/api/discovery/cost-reuse-plan", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Evidence critic — deterministic statistical/reproducibility gate
+  criticReview: (payload: {
+    claim: string;
+    analysis_id?: string;
+    analysis_type?: string;
+    metrics?: Record<string, any>;
+    datasets?: Array<Record<string, any>>;
+    methods?: Array<Record<string, any>>;
+    results_artifacts?: string[];
+    human_review_required?: boolean;
+  }) => req<any>("/api/discovery/critic/review", { method: "POST", body: JSON.stringify(payload) }),
+
+  answerCritic: (reviewId: string, evidence: Record<string, any>, comment?: string) =>
+    req<any>(`/api/discovery/critic/${reviewId}/evidence`, {
+      method: "POST",
+      body: JSON.stringify({ evidence, comment: comment || "" }),
+    }),
 };

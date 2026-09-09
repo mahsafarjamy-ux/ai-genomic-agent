@@ -4,7 +4,7 @@ services:
   # FastAPI backend
   api:
     build:
-      context: ../api
+      context: ..
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -13,13 +13,38 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/genomic_agent
       - REDIS_URL=redis://redis:6379/0
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - JOB_EXECUTION_MODE=${JOB_EXECUTION_MODE:-local}
+      - ARTIFACT_STORAGE_PATH=/app/artifacts
     volumes:
       - ../:/app          # Mount whole project (read-only except results)
       - uploads:/app/api/uploads
       - work:/app/api/work
+      - artifacts:/app/artifacts
     depends_on:
       - db
       - redis
+    restart: unless-stopped
+
+  # Optional durable worker. Enable with JOB_EXECUTION_MODE=celery.
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "core.queue", "worker", "--loglevel=INFO", "--concurrency=1"]
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/genomic_agent
+      - REDIS_URL=redis://redis:6379/0
+      - ARTIFACT_STORAGE_PATH=/app/artifacts
+    volumes:
+      - ../:/app
+      - uploads:/app/api/uploads
+      - work:/app/api/work
+      - artifacts:/app/artifacts
+    depends_on:
+      - db
+      - redis
+    profiles: ["worker"]
     restart: unless-stopped
 
   # Next.js frontend
@@ -55,3 +80,4 @@ volumes:
   pgdata:
   uploads:
   work:
+  artifacts:

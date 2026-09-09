@@ -7,6 +7,19 @@
 - Docker (optional but recommended for pipeline tools)
 - Snakemake: `pip install snakemake`
 
+For a reproducible local setup, use the development requirements inside a
+virtual environment:
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r api/requirements-dev.txt
+```
+
+The backend can start without `ANTHROPIC_API_KEY`. Public literature/data
+search, local pipelines, and the Evidence Critic work in local mode. Claude is
+required only for AI-generated literature synthesis and other optional
+language-model recommendations.
+
 ## Step 1 — Add your API key
 
 ```bash

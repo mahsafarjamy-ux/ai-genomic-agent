@@ -9,11 +9,27 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from api.models.schemas import RunJobRequest, JobSummary, JobStatus, FixApprovalRequest
+from core.persistence import JobRepository
 
 router = APIRouter()
 
 _job_store: dict = {}
 _fix_store: dict = {}
+_job_repo = JobRepository()
+
+
+def _persist_job(job: dict) -> None:
+    """Mirror the in-process execution view into durable control-plane state."""
+    try:
+        _job_repo.save(job)
+    except Exception:
+        # Local execution remains usable if an optional external database is
+        # temporarily unavailable; the health endpoint exposes that state.
+        pass
+
+
+def _load_job(job_id: str) -> dict | None:
+    return _job_store.get(job_id) or _job_repo.get(job_id)
 
 
 @router.post("/run", response_model=JobSummary)
@@ -53,15 +69,17 @@ async def run_job(request: RunJobRequest, background_tasks: BackgroundTasks):
         "logs": [],
     }
     _job_store[job_id] = job
+    _job_repo.create(job)
 
-    background_tasks.add_task(_run_pipeline_background, job_id, request, pipeline)
+    from core.queue import enqueue_pipeline
+    enqueue_pipeline(job_id, request.model_dump(), pipeline, background_tasks=background_tasks)
 
     return JobSummary(**{k: job[k] for k in JobSummary.model_fields})
 
 
 @router.get("/{job_id}", response_model=JobSummary)
 async def get_job(job_id: str):
-    job = _job_store.get(job_id)
+    job = _load_job(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
     return JobSummary(**{k: job[k] for k in JobSummary.model_fields})
@@ -137,16 +155,22 @@ async def cancel_job(job_id: str):
 
 @router.get("/")
 async def list_jobs():
-    return [
+    local = [
         {k: j[k] for k in ["job_id", "pipeline_id", "status", "progress_percent", "started_at"]}
         for j in _job_store.values()
     ]
+    known = {j["job_id"] for j in local}
+    for j in _job_repo.list():
+        if j.get("job_id") not in known:
+            local.append({k: j.get(k) for k in ["job_id", "pipeline_id", "status", "progress_percent", "started_at"]})
+    return local
 
 
 async def _run_pipeline_background(job_id: str, request: RunJobRequest, pipeline: dict):
     """Execute the Snakemake pipeline on the user's local data directory."""
     job = _job_store[job_id]
     job["status"] = JobStatus.RUNNING
+    _persist_job(job)
 
     try:
         analysis_type = (pipeline.get("analysis_type") or request.pipeline_id).lower()
@@ -160,6 +184,7 @@ async def _run_pipeline_background(job_id: str, request: RunJobRequest, pipeline
                 f"Expected Snakefile at: {snakefile}"
             )
             job["logs"].append(f"FATAL ERROR: {job['error_message']}")
+            _persist_job(job)
             return
 
         results_dir = Path(request.results_dir).resolve()
@@ -192,6 +217,10 @@ async def _run_pipeline_background(job_id: str, request: RunJobRequest, pipeline
             "--rerun-incomplete",
             "--nolock",
         ]
+        from core.provenance import write_manifest
+        write_manifest(results_dir, request.model_dump(), cmd, inputs=[str(ss_path), str(config_path)])
+        job["logs"].append("Reproducibility manifest written.")
+        _persist_job(job)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -244,6 +273,7 @@ async def _run_pipeline_background(job_id: str, request: RunJobRequest, pipeline
             job["progress_percent"] = 100.0
             job["completed_at"] = datetime.utcnow().isoformat()
             job["logs"].append("Pipeline completed successfully.")
+            _persist_job(job)
         else:
             await _trigger_error_analysis(job_id, "\n".join(job["logs"][-80:]), request)
 
@@ -251,6 +281,7 @@ async def _run_pipeline_background(job_id: str, request: RunJobRequest, pipeline
         job["status"] = JobStatus.FAILED
         job["error_message"] = str(e)
         job["logs"].append(f"FATAL ERROR: {e}")
+        _persist_job(job)
 
 
 # ── Knowledge base: remembered fixes (persisted to disk) ─────────────────
@@ -374,6 +405,7 @@ async def _trigger_error_analysis(job_id: str, error_text: str, request: RunJobR
             }
             _fix_store[job_id] = fix
             job["error_message"] = cause
+            _persist_job(job)
 
             if auto_fix:
                 job["logs"].append(f"[AUTO-FIX] {fix_desc} (learned from {known['times_approved']} previous fixes)")
@@ -402,9 +434,11 @@ async def _trigger_error_analysis(job_id: str, error_text: str, request: RunJobR
         _fix_store[job_id] = diagnosis
         job["error_message"] = diagnosis.get("root_cause", "Unknown error")
         job["status"] = JobStatus.AWAITING_APPROVAL
+        _persist_job(job)
     except Exception as e:
         job["status"] = JobStatus.FAILED
         job["error_message"] = f"Pipeline failed and error analysis also failed: {e}"
+        _persist_job(job)
 
 
 async def _apply_and_retry(job_id: str, fix: dict, request: RunJobRequest):
