@@ -20,9 +20,15 @@ from sqlalchemy import create_engine, ForeignKey, JSON, DateTime, Integer, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, relationship
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./genomic_agent.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine_options = {"pool_pre_ping": True}
+if os.getenv("VERCEL") and not DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy.pool import NullPool
+    engine_options["poolclass"] = NullPool
+engine = create_engine(DATABASE_URL, connect_args=connect_args, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

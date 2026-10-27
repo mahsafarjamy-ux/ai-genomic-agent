@@ -1,0 +1,8 @@
+# Minimal Vercel API runtime; local genomic pipeline dependencies stay in api/requirements.txt.
+fastapi==0.115.0
+pydantic==2.8.0
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
+httpx==0.27.0
+stripe==11.6.0
+email-validator==2.2.0

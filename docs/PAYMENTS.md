@@ -6,6 +6,12 @@ Hosted Stripe Checkout handles one-time DNA plan payments. The backend retrieves
 
 Virtual consultation checkout has separate booking fulfilment and its own webhook. Empty consultant lists produce no appointment availability and no consultation payments. Publishing the page does not provision the backend, email or meeting providers.
 
+## Vercel hosting
+
+The root `app.py` and minimal `requirements.txt` deploy the existing account, payment and counselling routers as a separate Vercel FastAPI project. The Next.js website remains in `web`. Set `DATABASE_URL` to a durable PostgreSQL database (pooled connection URL with TLS), `FRONTEND_URL` to the website origin, and `CORS_ORIGINS` to that same origin. The cloud entrypoint does not mount local file or genomic processing endpoints. Vercel connections use SQLAlchemy NullPool. Keep existing database data and back it up before connecting; do not point the cloud app at a new database expecting old local accounts to appear.
+
+Without a configured, reachable PostgreSQL database, the API returns an empty, closed counselling configuration and rejects account changes, bookings and fulfilment with HTTP 503. No account or payment state is written to Vercel temporary storage. Configure the durable database in the Vercel dashboard, then redeploy and verify `/api/health` reports `ready: true`.
+
 ## Production prerequisites
 
 Configure secrets directly in the backend host, never frontend public variables or Git:
