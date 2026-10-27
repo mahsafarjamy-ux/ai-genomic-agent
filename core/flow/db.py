@@ -13,6 +13,7 @@ from the on-disk file (uploads/flow/<file_id>.fcs) on demand.
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -28,7 +29,12 @@ engine_options = {"pool_pre_ping": True}
 if os.getenv("VERCEL") and not DATABASE_URL.startswith("sqlite"):
     from sqlalchemy.pool import NullPool
     engine_options["poolclass"] = NullPool
+DATABASE_SCHEMA = os.getenv("DATABASE_SCHEMA", "")
+if DATABASE_SCHEMA and not re.fullmatch(r"[a-z][a-z0-9_]*", DATABASE_SCHEMA):
+    raise ValueError("Invalid database schema name")
 engine = create_engine(DATABASE_URL, connect_args=connect_args, **engine_options)
+if DATABASE_SCHEMA:
+    engine = engine.execution_options(schema_translate_map={None: DATABASE_SCHEMA})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -169,19 +175,22 @@ class DeviceActivation(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
-    # Add billing columns to existing users table (SQLite-safe migration)
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE users ADD COLUMN plan VARCHAR(50) NOT NULL DEFAULT 'free'",
-            "ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(100)",
-            "ALTER TABLE users ADD COLUMN license_key VARCHAR(64)",
-        ]:
-            try:
-                conn.execute(text(stmt))
-                conn.commit()
-            except Exception:
-                pass  # column already exists
+    from sqlalchemy import inspect, text
+    columns = {column["name"] for column in inspect(engine).get_columns("users", schema=DATABASE_SCHEMA or None)}
+    users_table = f'"{DATABASE_SCHEMA}"."users"' if DATABASE_SCHEMA else '"users"'
+    for name, definition in [
+        ("plan", "VARCHAR(50) NOT NULL DEFAULT 'free'"),
+        ("stripe_customer_id", "VARCHAR(100)"),
+        ("license_key", "VARCHAR(64)"),
+    ]:
+        if name not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(f'ALTER TABLE {users_table} ADD COLUMN "{name}" {definition}'))
+    if DATABASE_SCHEMA and engine.dialect.name == "postgresql":
+        # API access uses the server's database role; client Data API roles have no policies.
+        with engine.begin() as conn:
+            for table in Base.metadata.sorted_tables:
+                conn.execute(text(f'ALTER TABLE "{DATABASE_SCHEMA}"."{table.name}" ENABLE ROW LEVEL SECURITY'))
 
 
 def get_session():
