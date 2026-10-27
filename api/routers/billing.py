@@ -9,19 +9,47 @@ from core.flow.db import SessionLocal, User, DeviceActivation
 
 try:
     import stripe as _stripe
-    _stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-    STRIPE_OK = bool(os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_"))
 except ImportError:
-    _stripe = None  # type: ignore
-    STRIPE_OK = False
+    _stripe = None
 
-WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
-PRICE_TO_PLAN: dict[str, str] = {
-    os.environ.get("STRIPE_PRICE_ESSENTIAL", "__none_e__"): "essential",
-    os.environ.get("STRIPE_PRICE_COMPLETE",  "__none_c__"): "complete",
-    os.environ.get("STRIPE_PRICE_LIFETIME",  "__none_l__"): "lifetime",
-}
+def _configured_stripe():
+    key = os.getenv("STRIPE_SECRET_KEY", "")
+    if _stripe is None or not key:
+        raise HTTPException(503, "Payments are not configured yet. Please contact BioVerse support.")
+    _stripe.api_key = key
+    return _stripe
+
+
+def _price_id(plan):
+    if plan not in ("essential", "complete", "lifetime"):
+        raise HTTPException(400, "Unknown plan.")
+    value = os.getenv("STRIPE_PRICE_" + plan.upper(), "")
+    if not value.startswith("price_") or "REPLACE" in value:
+        raise HTTPException(503, "This plan is not configured for purchase yet. Please contact BioVerse support.")
+    return value
+
+
+def _price(plan):
+    try:
+        value = _configured_stripe().Price.retrieve(_price_id(plan))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "We could not verify the plan price. Please try again later.") from exc
+    if not value.get("active") or value.get("type") != "one_time" or not isinstance(value.get("unit_amount"), int) or value["unit_amount"] <= 0:
+        raise HTTPException(503, "This plan is not available for one-time purchase.")
+    return value
+
+
+def _frontend_url():
+    from urllib.parse import urlparse
+    value = os.getenv("FRONTEND_URL", "").rstrip("/")
+    parsed = urlparse(value)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path or not parsed.netloc or (parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))):
+        raise HTTPException(503, "The payment return address is not configured. Please contact BioVerse support.")
+    return value
+
 
 PLAN_LIMITS: dict[str, dict] = {
     "free":       {"max_devices": 0,  "can_analyze": False, "label": "Free",       "price_usd": None},
@@ -43,44 +71,51 @@ def _require_user(authorization: str, db) -> User:
     return user
 
 
-@router.post("/checkout")
-def create_checkout(plan: str, authorization: str = Header(...)):
-    """Create a Stripe Checkout session and return the redirect URL."""
-    if not STRIPE_OK:
-        raise HTTPException(status_code=503, detail="Stripe is not configured. Add STRIPE_SECRET_KEY to api/.env")
-    price_map = {
-        "essential": os.environ.get("STRIPE_PRICE_ESSENTIAL"),
-        "complete":  os.environ.get("STRIPE_PRICE_COMPLETE"),
-        "lifetime":  os.environ.get("STRIPE_PRICE_LIFETIME"),
-    }
-    price_id = price_map.get(plan)
-    if not price_id or price_id.startswith("price_REPLACE"):
-        raise HTTPException(status_code=400, detail=f"Price ID for '{plan}' not configured in api/.env")
+@router.get("/plans")
+def available_plans():
+    _configured_stripe()
+    plans = []
+    for plan in ("essential", "complete", "lifetime"):
+        if not os.getenv("STRIPE_PRICE_" + plan.upper()):
+            continue
+        price = _price(plan)
+        plans.append({"id": plan, "amount": price["unit_amount"], "currency": price["currency"]})
+    if not plans:
+        raise HTTPException(503, "Plan prices are not configured yet. Please contact BioVerse support.")
+    return {"plans": plans}
 
+
+@router.post("/checkout")
+def create_checkout(plan: str, authorization: str = Header(...), expected_amount: int | None = None, expected_currency: str | None = None):
+    """Create hosted Checkout with a server-verified price and signed fulfilment."""
+    stripe = _configured_stripe()
+    if not os.getenv("STRIPE_WEBHOOK_SECRET"):
+        raise HTTPException(503, "Payment confirmation is not configured yet. Please contact BioVerse support.")
     db = SessionLocal()
     try:
         user = _require_user(authorization, db)
+        front = _frontend_url()
+        price = _price(plan)
+        if (expected_amount is not None and expected_amount != price["unit_amount"]) or (expected_currency is not None and expected_currency != price["currency"]):
+            raise HTTPException(409, "The price has changed. Refresh the page before purchasing.")
         if not user.stripe_customer_id:
-            customer = _stripe.Customer.create(email=user.email, name=user.name)
+            customer = stripe.Customer.create(email=user.email, name=user.name, idempotency_key="bioverse-customer-" + user.id)
             user.stripe_customer_id = customer.id
             db.commit()
-
-        session = _stripe.checkout.Session.create(
+        session = stripe.checkout.Session.create(
             customer=user.stripe_customer_id,
             payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
-            mode="payment",
-            success_url=(
-                f"{os.environ.get('FRONTEND_URL', 'http://localhost:3002')}"
-                "/account?tab=subscription&success=1"
-            ),
-            cancel_url=(
-                f"{os.environ.get('FRONTEND_URL', 'http://localhost:3002')}"
-                "/personal#pricing"
-            ),
+            line_items=[{"price": price["id"], "quantity": 1}], mode="payment",
+            client_reference_id=user.id,
+            success_url=front + "/account?tab=subscription&success=1",
+            cancel_url=front + "/personal#pricing",
             metadata={"user_id": user.id, "plan": plan},
         )
         return {"checkout_url": session.url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Checkout is temporarily unavailable. Please try again later.") from exc
     finally:
         db.close()
 
@@ -88,8 +123,7 @@ def create_checkout(plan: str, authorization: str = Header(...)):
 @router.post("/portal")
 def billing_portal(authorization: str = Header(...)):
     """Open the Stripe customer portal (manage subscription/receipts)."""
-    if not STRIPE_OK:
-        raise HTTPException(status_code=503, detail="Stripe is not configured")
+    _configured_stripe()
     db = SessionLocal()
     try:
         user = _require_user(authorization, db)
@@ -98,7 +132,7 @@ def billing_portal(authorization: str = Header(...)):
         session = _stripe.billing_portal.Session.create(
             customer=user.stripe_customer_id,
             return_url=(
-                f"{os.environ.get('FRONTEND_URL', 'http://localhost:3002')}"
+                f"{_frontend_url()}"
                 "/account?tab=subscription"
             ),
         )
@@ -109,31 +143,46 @@ def billing_portal(authorization: str = Header(...)):
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
-    """Stripe webhook — activates plan after successful payment."""
-    if not STRIPE_OK or not _stripe:
-        raise HTTPException(status_code=503, detail="Stripe not configured")
-    payload = await request.body()
-    sig = request.headers.get("stripe-signature", "")
+    stripe = _configured_stripe()
+    secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(503, "Payment confirmation is not configured.")
     try:
-        event = _stripe.Webhook.construct_event(payload, sig, WEBHOOK_SECRET)
+        event = stripe.Webhook.construct_event(await request.body(), request.headers.get("stripe-signature", ""), secret)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature")
-
-    if event["type"] == "checkout.session.completed":
-        sess = event["data"]["object"]
-        meta = sess.get("metadata") or {}
+        raise HTTPException(400, "Invalid webhook signature")
+    if event["type"] not in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        return {"ok": True}
+    incoming = event["data"]["object"]
+    if not incoming.get("metadata", {}).get("plan"):
+        return {"ok": True}  # Counselling has its own fulfilment endpoint.
+    try:
+        session = stripe.checkout.Session.retrieve(incoming["id"], expand=["line_items"])
+        if session.get("mode") != "payment" or session.get("status") != "complete" or session.get("payment_status") != "paid":
+            return {"ok": True}
+        meta = session.get("metadata") or {}
         uid, plan = meta.get("user_id"), meta.get("plan")
-        if uid and plan:
-            db = SessionLocal()
-            try:
-                u = db.query(User).filter_by(id=uid).first()
-                if u:
-                    u.plan = plan
-                    if not u.license_key:
-                        u.license_key = secrets.token_hex(16)
-                    db.commit()
-            finally:
-                db.close()
+        price_id = _price_id(plan)
+        items = session.get("line_items", {}).get("data", [])
+        if len(items) != 1 or items[0].get("quantity") != 1 or items[0].get("price", {}).get("id") != price_id:
+            raise HTTPException(400, "Payment does not match the selected plan.")
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter_by(id=uid).first()
+            if not user or user.stripe_customer_id != session.get("customer") or session.get("client_reference_id") != user.id:
+                raise HTTPException(400, "Payment account mismatch.")
+            rank = {"free": 0, "trial": 0, "essential": 1, "complete": 2, "lifetime": 3, "enterprise": 4}
+            if rank.get(plan, -1) >= rank.get(user.plan or "free", 0):
+                user.plan = plan
+            if not user.license_key:
+                user.license_key = secrets.token_hex(16)
+            db.commit()
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Unable to confirm payment. Stripe should retry this event.") from exc
     return {"ok": True}
 
 

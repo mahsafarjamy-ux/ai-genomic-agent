@@ -15,13 +15,14 @@ export type Booking = Slot & {
   consultant_name: string; patient_name?: string; status: string;
   price_cents: number; currency: string; checkout_url?: string;
 };
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BASE = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
 
 export class CounsellingError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
 export async function counsellingRequest<T>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (!BASE) throw new CounsellingError("Appointments are not open yet. Please check back for consultant availability.", 503);
   const token = typeof window !== "undefined" ? localStorage.getItem("genomics_token") : null;
   const response = await fetch(`${BASE}/api${path}`, {
     method: method || (body === undefined ? "GET" : "POST"),

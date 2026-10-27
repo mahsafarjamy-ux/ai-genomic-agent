@@ -131,7 +131,7 @@ export default function CounsellingPage() {
       {config && !config.enabled && <div className={styles.notice}>Appointments are not open yet. You can explore this section; available consultants and booking will appear when the service opens.</div>}
       <div className={styles.grid}>
         <div>
-          {ready && !user && <section className={styles.card}>
+          {ready && config && !user && <section className={styles.card}>
             <h2>{register ? "Create your BioVerse account" : "Welcome back"}</h2>
             <p className={styles.muted}>Already use BioVerse? Sign in with the same account.</p>
             <form className={styles.form} onSubmit={authenticate}>
@@ -180,7 +180,7 @@ export default function CounsellingPage() {
           <section className={styles.card} id="consultants">
             <h2>Choose your consultant</h2>
             <p className={styles.muted}>Each consultant has their own availability and session fee.</p>
-            {config?.consultants.length === 0 && <p>No consultants are accepting bookings yet. Please check back for availability.</p>}
+            {ready && (!config || config.consultants.length === 0) && <p>No consultants are accepting bookings yet. Please check back for availability.</p>}
             <div className={styles.consultants}>{config?.consultants.map(person => <button key={person.id} aria-pressed={consultant?.id === person.id} className={`${styles.consultant} ${consultant?.id === person.id ? styles.selected : ""}`} onClick={() => { setConsultant(person); setSlot(null); setDay(""); }}>
               <h3>{person.name}</h3><p>{person.credentials}</p><p className={styles.muted}>{person.bio}</p>
               <p><strong>{money(person.price_cents, person.currency)}</strong> · {person.duration_minutes} minutes · Virtual</p>
