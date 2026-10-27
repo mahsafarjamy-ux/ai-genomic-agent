@@ -3,6 +3,7 @@
 import { AuthUser } from "@/hooks/useAuth";
 
 const NAV_LINKS = [
+  { href: "/counselling", label: "Counselling" },
   { href: "/dashboard",  label: "Dashboard"   },
   { href: "/data",       label: "Public Data"  },
   { href: "/discovery",  label: "Discovery"    },

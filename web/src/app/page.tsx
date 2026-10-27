@@ -1,5 +1,7 @@
 "use client";
 
+import CounsellingInvite from "@/components/CounsellingInvite";
+
 import { useState, useRef, useEffect } from "react";
 
 export default function GatewayPage() {
@@ -245,6 +247,7 @@ export default function GatewayPage() {
           🔒 All computation runs locally on your machine · No data transmitted anywhere<br />
           Compatible with macOS, Windows, and Linux
         </p>
+        <CounsellingInvite />
       </main>
     </div>
   );

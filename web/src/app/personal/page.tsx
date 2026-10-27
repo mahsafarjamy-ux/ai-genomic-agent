@@ -1,5 +1,7 @@
 "use client";
 
+import CounsellingInvite from "@/components/CounsellingInvite";
+
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
@@ -264,6 +266,8 @@ export default function PersonalPage() {
           }}>← Back</a>
         </div>
       </header>
+      <CounsellingInvite />
+
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* RESULTS VIEW */}
