@@ -19,6 +19,10 @@ def _hash(pw: str) -> str:
 
 def _verify(pw: str, stored: str) -> bool:
     try:
+        if stored.startswith("scrypt:"):
+            _, salt, expected = stored.split(":", 2)
+            actual = hashlib.scrypt(pw.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
+            return hmac.compare_digest(actual, expected)
         salt, h = stored.split(":", 1)
         return hmac.compare_digest(hashlib.sha256(f"{salt}:{pw}".encode()).hexdigest(), h)
     except Exception:

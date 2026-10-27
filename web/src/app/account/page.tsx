@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import NavBar from "@/components/NavBar";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
+import { BillingPlan, getBillingPlans, displayPrice, startCheckout } from "@/lib/billing";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -141,6 +142,15 @@ export default function AccountPage() {
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingError, setBillingError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [billingPlans, setBillingPlans] = useState<BillingPlan[]>([]);
+  useEffect(() => {
+    getBillingPlans().then(setBillingPlans).catch(() => setBillingError("Plan pricing is temporarily unavailable."));
+  }, []);
+  function planPrice(id: string) {
+    const plan = billingPlans.find(p => p.id === id);
+    return plan ? displayPrice(plan) : "Price unavailable";
+  }
+
   const [activateMsg, setActivateMsg]   = useState("");
   const [thisDeviceId]                  = useState(() => typeof window !== "undefined" ? getDeviceId() : "");
   const [thisDeviceLabel]               = useState(() => typeof window !== "undefined" ? getDeviceLabel() : "");
@@ -191,12 +201,9 @@ export default function AccountPage() {
   async function handleCheckout(plan: string) {
     setCheckoutLoading(plan);
     try {
-      const res = await authFetch(`/api/billing/checkout?plan=${plan}`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) { alert(data.detail || "Checkout failed"); return; }
-      window.location.href = data.checkout_url;
-    } catch {
-      alert("Could not start checkout. Is the backend running?");
+      window.location.assign(await startCheckout(plan, billingPlans.find(p => p.id === plan)));
+    } catch (err) {
+      setBillingError(err instanceof Error ? err.message : "Could not start checkout. Please try again.");
     } finally {
       setCheckoutLoading(null);
     }
@@ -661,7 +668,7 @@ export default function AccountPage() {
                       style={{ border: `2px solid ${p.color}22`, background: `${p.color}08` }}>
                       <div>
                         <p className="font-black text-xl" style={{ color: p.color }}>{p.label}</p>
-                        <p className="text-2xl font-bold mt-0.5" style={{ color: "var(--text)" }}>{p.price} <span className="text-sm font-normal" style={{ color: "var(--muted)" }}>one-time</span></p>
+                        <p className="text-2xl font-bold mt-0.5" style={{ color: "var(--text)" }}>{planPrice(p.id)} <span className="text-sm font-normal" style={{ color: "var(--muted)" }}>one-time</span></p>
                         <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{p.devices} device{p.devices > 1 ? "s" : ""}</p>
                       </div>
                       <ul className="space-y-1">
@@ -701,7 +708,7 @@ export default function AccountPage() {
                       disabled={checkoutLoading === p.id}
                       className="px-4 py-2 rounded-xl text-sm font-semibold"
                       style={{ background: p.color, color: "#fff", opacity: checkoutLoading === p.id ? 0.6 : 1 }}>
-                      {checkoutLoading === p.id ? "…" : `Upgrade to ${p.label} (${p.price})`}
+                      {checkoutLoading === p.id ? "…" : `Upgrade to ${p.label} (${planPrice(p.id)})`}
                     </button>
                   ))}
                 </div>

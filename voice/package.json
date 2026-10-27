@@ -1,0 +1,7 @@
+{
+  "name": "bioverse-counselling-support",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "check": "node --check server.mjs" },
+  "dependencies": { "twilio": "^5.10.0", "ws": "^8.18.3" }
+}

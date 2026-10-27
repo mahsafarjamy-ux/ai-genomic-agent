@@ -1,0 +1,48 @@
+.page { background: #f7faf9; color: #173e3c; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; padding-bottom: 70px; }
+.header { padding: 20px max(22px, calc((100vw - 1140px)/2)); border-bottom: 1px solid #dbe6e2; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; background: white; }
+.header a { color: #195d55; text-decoration: none; }
+.brand { font-size: 23px; font-weight: 800; letter-spacing: -1px; margin-right: auto; }
+.main { max-width: 1140px; margin: auto; padding: 36px 22px; }
+.hero { padding: 22px 0 36px; max-width: 760px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 12px; color: #507a70; font-weight: 700; }
+.hero h1 { font-size: clamp(32px, 5vw, 54px); line-height: 1.1; letter-spacing: -2px; margin: 14px 0 20px; }
+.page p { line-height: 1.65; }
+.steps { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 0 0 30px; list-style: none; }
+.steps li { padding: 8px 15px; border-radius: 24px; border: 1px solid #ccdcd7; font-size: 13px; background: white; }
+.steps .complete { background: #e1f1eb; border-color: #9dbfb0; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; align-items: start; }
+.card { background: white; border: 1px solid #dbe6e2; border-radius: 18px; padding: 26px; margin-bottom: 22px; box-shadow: 0 3px 14px #123c3210; }
+.card h2 { font-size: 22px; font-weight: 700; margin-bottom: 14px; letter-spacing: -.4px; }
+.card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.form { display: grid; gap: 17px; }
+.form label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }
+.page input:not([type=checkbox]), .page select, .page textarea { background: #fff; color: #173e3c; border: 1px solid #a8c3b9; padding: 12px; border-radius: 9px; font: inherit; width: 100%; min-width: 0; }
+.page button { cursor: pointer; }
+.page button:disabled { opacity: .45; cursor: not-allowed; }
+.page button:focus-visible, .page a:focus-visible, .page input:focus-visible, .page select:focus-visible, .page textarea:focus-visible { outline: 3px solid #dd9347; outline-offset: 3px; }
+.primary, .secondary { display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; padding: 12px 18px; font-weight: 600; font-size: 14px; text-decoration: none; border: 1px solid #195d55; }
+.primary { background: #195d55; color: white; }
+.secondary { background: white; color: #195d55; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.muted { color: #596f68; font-size: 14px; }
+.notice, .error, .success { padding: 16px 20px; margin-bottom: 22px; border-radius: 12px; line-height: 1.6; }
+.notice { background: #fff3dc; color: #715326; border: 1px solid #ecd5a8; }
+.error { background: #fff0ec; color: #9a3526; border: 1px solid #f3c0b5; }
+.success { background: #e2f3eb; color: #225e43; border: 1px solid #b8d9c8; }
+.consent { white-space: pre-wrap; line-height: 1.7; font-size: 14px; background: #f7faf9; padding: 20px; border-radius: 10px; margin: 14px 0; }
+.check { display: flex !important; align-items: flex-start; gap: 12px !important; line-height: 1.6; }
+.check input { margin-top: 6px; width: 18px; height: 18px; flex-shrink: 0; }
+.consultants { display: grid; gap: 12px; margin: 20px 0; }
+.consultant { text-align: left; padding: 20px; border-radius: 12px; border: 1px solid #dbe6e2; background: white; }
+.selected { border-color: #195d55 !important; box-shadow: inset 0 0 0 1px #195d55; background: #eff8f4 !important; }
+.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin: 18px 0; }
+.calendar span { text-align: center; font-size: 12px; padding: 8px 0; }
+.calendar button { background: white; border: 1px solid #d3e3dc; min-height: 42px; border-radius: 8px; color: #173e3c; font-weight: 600; }
+.times { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0; }
+.booking { padding: 20px 0; border-top: 1px solid #e0e9e5; }
+.badge { display: inline-block; border-radius: 20px; padding: 5px 10px; background: #eaf3ef; font-size: 12px; text-transform: capitalize; margin: 10px 0; }
+.meeting { width: 100%; min-height: 650px; border: 0; border-radius: 12px; margin-top: 15px; background: #153c38; }
+.aside { position: sticky; top: 20px; }
+.aside p { margin-bottom: 15px; }
+.adminGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 800px) { .grid, .adminGrid { grid-template-columns: 1fr; } .aside { position: static; } .main { padding: 22px 16px; } .card { padding: 20px; } .header { padding: 18px; gap: 14px; font-size: 14px; } .meeting { min-height: 480px; } }

@@ -28,3 +28,7 @@ flowio==1.3.0
 flowutils==1.1.0
 numpy==1.26.4
 pandas==2.2.2
+
+# Hosted appointment checkout and validated registration email
+stripe==11.6.0
+email-validator==2.2.0

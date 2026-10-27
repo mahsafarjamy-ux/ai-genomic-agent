@@ -1,9 +1,12 @@
 "use client";
 
+import CounsellingInvite from "@/components/CounsellingInvite";
+
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
 import TrustPanel from "@/components/TrustPanel";
+import { BillingPlan, getBillingPlans, displayPrice, startCheckout } from "@/lib/billing";
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 interface InsightCard {
@@ -134,6 +137,24 @@ export default function PersonalPage() {
   const [results, setResults]       = useState<AnalysisResult | null>(null);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentSignIn, setPaymentSignIn] = useState(false);
+  const [billingPlans, setBillingPlans] = useState<BillingPlan[]>([]);
+
+  useEffect(() => {
+    getBillingPlans().then(setBillingPlans).catch(() => setPaymentError("Plan pricing is temporarily unavailable. Please try again later."));
+  }, []);
+
+  async function purchase(tier: string) {
+    setSelectedTier(tier); setPaymentError("");
+    if (!localStorage.getItem("genomics_token")) { setPaymentSignIn(true); return; }
+    setPaymentSignIn(false); setPaymentLoading(true);
+    try { window.location.assign(await startCheckout(tier.toLowerCase(), billingPlans.find(plan => plan.id === tier.toLowerCase()))); }
+    catch (err) { setPaymentError(err instanceof Error ? err.message : "Checkout is unavailable. Please try again."); }
+    finally { setPaymentLoading(false); }
+  }
+
   const [analysisDate, setAnalysisDate] = useState("");
   const fileRef   = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -264,6 +285,8 @@ export default function PersonalPage() {
           }}>← Back</a>
         </div>
       </header>
+      <CounsellingInvite />
+
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* RESULTS VIEW */}
@@ -919,7 +942,7 @@ export default function PersonalPage() {
                   )}
                   <div style={{ fontSize: 13, fontWeight: 700, color: p.color, marginBottom: 6 }}>{p.tier}</div>
                   <div style={{ fontSize: 36, fontWeight: 900, color: "#1c1a16", letterSpacing: "-0.04em", marginBottom: 2 }}>
-                    {p.price}
+                    {billingPlans.find(plan => plan.id === p.tier.toLowerCase()) ? displayPrice(billingPlans.find(plan => plan.id === p.tier.toLowerCase())!) : "Price unavailable"}
                   </div>
                   <div style={{ fontSize: 12, color: "#9c9892", marginBottom: "1.5rem" }}>{p.period}</div>
                   <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
@@ -934,6 +957,8 @@ export default function PersonalPage() {
                     ))}
                   </ul>
                   <button
+                    onClick={event => { event.stopPropagation(); void purchase(p.tier); }}
+                    disabled={paymentLoading}
                     style={{
                       marginTop: "1.5rem",
                       width: "100%",
@@ -948,21 +973,26 @@ export default function PersonalPage() {
                       transition: "all 0.18s",
                     } as React.CSSProperties}
                   >
-                    {selectedTier === p.tier ? "Selected" : `Get ${p.tier}`}
+                    {paymentLoading && selectedTier === p.tier ? "Opening checkout…" : `Get ${p.tier}`}
                   </button>
                 </div>
               ))}
             </div>
 
+            {paymentError && <p role="alert" style={{ color: "#a52f25", textAlign: "center", marginTop: 20 }}>{paymentError}</p>}
+            {paymentSignIn && <div style={{ maxWidth: 420, margin: "24px auto" }}>
+              <p style={{ marginBottom: 12 }}>Sign in or create your BioVerse account to purchase {selectedTier}. Your Stripe account is not needed.</p>
+              <AuthForm onSuccess={() => { refresh(); if (selectedTier) void purchase(selectedTier); }} />
+            </div>}
             {selectedTier && (
               <div style={{ textAlign: "center", marginTop: "2rem" }}>
-                <button style={{
+                <button onClick={() => void purchase(selectedTier)} disabled={paymentLoading} style={{
                   padding: "14px 40px", borderRadius: 14, border: "none",
                   background: "linear-gradient(135deg, #e44c81, #f05808)",
                   color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer",
                   boxShadow: "0 4px 20px rgba(228,76,129,0.3)",
                 }}>
-                  Continue with {selectedTier} →
+                  {paymentLoading ? "Opening checkout…" : `Continue with ${selectedTier} →`}
                 </button>
                 <p style={{ fontSize: 12, color: "#9c9892", marginTop: "0.75rem" }}>
                   Secure checkout · 30-day money-back guarantee

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from api.routers import articles, pipelines, jobs, reports, data, tools, public_data, discovery, connectors, flow, auth, fs, genome_personal, samplesheet, billing
+from api.routers import articles, pipelines, jobs, reports, data, tools, public_data, discovery, connectors, flow, auth, fs, genome_personal, samplesheet, billing, counselling
 
 
 @asynccontextmanager
@@ -58,6 +58,7 @@ app.include_router(auth.router,        prefix="/api/auth",        tags=["Auth"])
 app.include_router(fs.router,              prefix="/api/fs",                tags=["Local Filesystem"])
 app.include_router(genome_personal.router, prefix="/api/genome-personal",   tags=["Personal Genome"])
 app.include_router(samplesheet.router,    prefix="/api/samplesheet",         tags=["Samplesheet"])
+app.include_router(counselling.router, prefix="/api/counselling", tags=["Genetic Counselling"])
 app.include_router(billing.router,        prefix="/api/billing",             tags=["Billing & Licensing"])
 
 
