@@ -1,0 +1,11 @@
+assembly: ROS_Cfam_1.0
+reference: /runpod-volume/references/dog/reference.fa
+vep_cache: /runpod-volume/references/dog/vep-cache
+vep_plugins: /opt/vep/plugins
+iedb_install: /opt/iedb
+dla_alleles: [] # Fill from validated DLA typing for this dog and predictor coverage.
+threads: 8
+gpu: false
+reads:
+  tumor: [tumor_1.fastq.gz, tumor_2.fastq.gz]
+  normal: [normal_1.fastq.gz, normal_2.fastq.gz]

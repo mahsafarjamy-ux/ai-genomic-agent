@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import auth, billing, counselling, genome_personal
+from api.routers import auth, billing, counselling, genome_personal, pet_oncology
 from core.flow.db import init_db
 
 
@@ -57,6 +57,7 @@ def health():
             'database': 'ready' if app.state.database_ready else ('unavailable' if durable_database_configured() else 'not_configured')}
 
 
+app.include_router(pet_oncology.router, prefix="/api/pet-oncology")
 app.include_router(auth.router, prefix='/api/auth')
 app.include_router(billing.router, prefix='/api/billing')
 app.include_router(genome_personal.router, prefix='/api/genome-personal')

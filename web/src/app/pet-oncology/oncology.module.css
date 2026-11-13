@@ -1,0 +1,28 @@
+.canvas { background:#f5f3ed; color:#142f2b; min-height:100vh; font-family:var(--font-geist-sans),sans-serif; }
+.bar { display:flex; justify-content:space-between; align-items:center; padding:1.3rem max(5vw,1.3rem); border-bottom:1px solid #d8dfd7; }
+.bar strong {font-size:1.55rem;letter-spacing:-.06em}
+.bar a,.canvas a {text-decoration:none;color:inherit}
+.shell {max-width:1240px;margin:auto;padding:clamp(2rem,6vw,5rem) max(5vw,1.3rem)}
+.intro {margin-bottom:2.3rem}
+.eyebrow,.paths span {font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em}
+.canvas h1 {font-size:clamp(3rem,7vw,6rem);letter-spacing:-.085em;line-height:.98;margin:.55rem 0 1.1rem}
+.canvas h2 {font-size:clamp(1.6rem,3vw,2.5rem);line-height:1.04;letter-spacing:-.06em;margin:.5rem 0}
+.canvas p {line-height:1.55}
+.paths {display:grid;grid-template-columns:1.25fr 1fr;gap:1rem}
+.feature,.side a,.panel {border-radius:1.4rem;padding:clamp(1.4rem,3vw,2.3rem)}
+.feature {min-height:410px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(0deg,#103430 3%,#143e39a8 55%,#17474080),url('/pet-oncology.webp') center 38%/cover,#174740;color:#fff!important}
+.paths strong {display:inline-block;margin-top:1rem}
+.side {display:grid;gap:1rem}
+.side a:first-child {background:#e6e8fa}
+.side a:last-child {background:#e1ebdc}
+.paths a:hover {outline:2px solid #437d69;outline-offset:2px}
+.panel {background:#fff;border:1px solid #d8dfd7;max-width:760px;margin-top:1.2rem}
+.panel label {display:block;margin:1rem 0 .35rem;font-weight:600}
+.panel input:not([type=checkbox]),.panel textarea,.panel select {width:100%;background:#f7faf7;border:1px solid #b9cbbf;border-radius:.55rem;padding:.7rem;color:#142f2b}
+.button {display:inline-block;background:#174740;color:white!important;border-radius:.65rem;padding:.7rem 1rem;font-weight:650;margin-top:1rem;cursor:pointer}
+.button:disabled {opacity:.55;cursor:default}
+.options {display:flex;flex-wrap:wrap;gap:.6rem;margin:1.1rem 0}
+.options button {padding:.7rem .9rem;border:1px solid #799b8d;border-radius:.65rem}
+.options button[aria-pressed=true] {background:#174740;color:white}
+.note {max-width:48rem;color:#415c55}
+@media(max-width:720px){.paths{grid-template-columns:1fr}.feature{min-height:340px}}
