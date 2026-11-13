@@ -1,0 +1,161 @@
+"""Paired-end canine research pipeline. Supply the assay-specific case config."""
+
+SAMPLES = ("tumor", "normal")
+OUT = config.get("output", "results")
+REF = config["reference"]
+GPU = config.get("gpu", False)
+THREADS = int(config.get("threads", 8))
+ASSEMBLY = config["assembly"]
+
+wildcard_constraints:
+    sample="tumor|normal"
+
+rule all:
+    input:
+        f"{OUT}/review.md"
+
+rule fastqc:
+    input:
+        lambda wc: config["reads"][wc.sample]
+    output:
+        directory(f"{OUT}/qc/{{sample}}")
+    params:
+        threads=min(4, THREADS)
+    shell:
+        "mkdir -p {output:q}; fastqc -t {params.threads} --outdir {output:q} {input:q}"
+
+rule align:
+    input:
+        reads=lambda wc: config["reads"][wc.sample],
+        reference=REF,
+        qc=f"{OUT}/qc/{{sample}}"
+    output:
+        bam=f"{OUT}/bam/{{sample}}.bam"
+    threads: THREADS
+    resources:
+        gpu=int(GPU)
+    params:
+        mode="gpu" if GPU else "cpu",
+        sample=lambda wc: wc.sample,
+        rg=lambda wc: f"@RG\\tID:{wc.sample}\\tSM:{wc.sample}\\tPL:ILLUMINA\\tLB:{wc.sample}\\tPU:{wc.sample}"
+    shell:
+        """
+        mkdir -p $(dirname {output.bam:q})
+        if [[ {params.mode:q} == gpu ]]; then
+          pbrun fq2bam --ref {input.reference:q} --in-fq {input.reads:q} --read-group-sm {params.sample:q} --out-bam {output.bam:q} --num-gpus 1
+        else
+          bwa mem -t {threads} -R {params.rg:q} {input.reference:q} {input.reads:q} |
+            samtools sort -o {output.bam:q}
+        fi
+        """
+
+rule prepare_bam:
+    input:
+        f"{OUT}/bam/{{sample}}.bam"
+    output:
+        bam=f"{OUT}/dedup/{{sample}}.bam",
+        bai=f"{OUT}/dedup/{{sample}}.bam.bai",
+        metrics=f"{OUT}/dedup/{{sample}}.metrics.txt",
+        flags=f"{OUT}/dedup/{{sample}}.flagstat"
+    shell:
+        """
+        mkdir -p $(dirname {output.bam:q})
+        gatk MarkDuplicates -I {input:q} -O {output.bam:q} -M {output.metrics:q}
+        samtools index {output.bam:q} {output.bai:q}
+        samtools flagstat {output.bam:q} > {output.flags:q}
+        """
+
+rule qc_report:
+    input:
+        expand(f"{OUT}/qc/{{sample}}", sample=SAMPLES),
+        expand(f"{OUT}/dedup/{{sample}}.flagstat", sample=SAMPLES),
+        expand(f"{OUT}/dedup/{{sample}}.metrics.txt", sample=SAMPLES)
+    output:
+        f"{OUT}/multiqc_report.html"
+    shell:
+        "multiqc --force -o $(dirname {output:q}) {input:q}"
+
+rule mutect2:
+    input:
+        tumor=f"{OUT}/dedup/tumor.bam",
+        normal=f"{OUT}/dedup/normal.bam",
+        indices=expand(f"{OUT}/dedup/{{sample}}.bam.bai", sample=SAMPLES),
+        reference=REF
+    output:
+        vcf=f"{OUT}/raw.vcf.gz",
+        index=f"{OUT}/raw.vcf.gz.tbi",
+        stats=f"{OUT}/raw.vcf.gz.stats",
+        orientation=f"{OUT}/f1r2.tar.gz"
+    threads: THREADS
+    shell:
+        """
+        gatk Mutect2 -R {input.reference:q} -I {input.tumor:q} -I {input.normal:q} \
+          -normal normal --native-pair-hmm-threads {threads} --f1r2-tar-gz {output.orientation:q} -O {output.vcf:q}
+        """
+
+rule orientation:
+    input:
+        f"{OUT}/f1r2.tar.gz"
+    output:
+        f"{OUT}/orientation.tar.gz"
+    shell:
+        "gatk LearnReadOrientationModel -I {input:q} -O {output:q}"
+
+rule filter_calls:
+    input:
+        vcf=f"{OUT}/raw.vcf.gz",
+        index=f"{OUT}/raw.vcf.gz.tbi",
+        stats=f"{OUT}/raw.vcf.gz.stats",
+        orientation=f"{OUT}/orientation.tar.gz",
+        reference=REF
+    output:
+        f"{OUT}/pass.vcf"
+    shell:
+        """
+        gatk FilterMutectCalls -R {input.reference:q} -V {input.vcf:q} --stats {input.stats:q} \
+          --orientation-bias-artifact-priors {input.orientation:q} -O {output:q}.filtered.vcf
+        bcftools view -f PASS -Ov -o {output:q} {output:q}.filtered.vcf
+        """
+
+rule annotate:
+    input:
+        vcf=f"{OUT}/pass.vcf",
+        reference=REF
+    output:
+        f"{OUT}/annotated.vcf"
+    threads: THREADS
+    params:
+        cache=config["vep_cache"],
+        plugins=config["vep_plugins"],
+        assembly=ASSEMBLY
+    shell:
+        """
+        vep --offline --cache --species canis_lupus_familiaris --assembly {params.assembly:q} \
+          --dir_cache {params.cache:q} --dir_plugins {params.plugins:q} --plugin Wildtype --plugin Frameshift \
+          --fasta {input.reference:q} --transcript_version --symbol --hgvs --vcf --force_overwrite \
+          --fork {threads} -i {input.vcf:q} -o {output:q}
+        """
+
+rule predict:
+    input:
+        f"{OUT}/annotated.vcf"
+    output:
+        directory(f"{OUT}/pvacseq")
+    threads: THREADS
+    params:
+        alleles=config["dla_alleles"],
+        iedb=config["iedb_install"]
+    script:
+        "predict.py"
+
+rule report:
+    input:
+        qc=f"{OUT}/multiqc_report.html",
+        predictions=f"{OUT}/pvacseq"
+    output:
+        f"{OUT}/review.md"
+    params:
+        assembly=ASSEMBLY,
+        alleles=config["dla_alleles"]
+    script:
+        "report.py"

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from api.routers import articles, pipelines, jobs, reports, data, tools, public_data, discovery, connectors, flow, auth, fs, genome_personal, samplesheet, billing, counselling
+from api.routers import articles, pipelines, jobs, reports, data, tools, public_data, discovery, connectors, flow, auth, fs, genome_personal, samplesheet, billing, counselling, pet_oncology
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(pet_oncology.router, prefix="/api/pet-oncology")
 app.include_router(articles.router, prefix="/api/articles", tags=["Articles"])
 app.include_router(pipelines.router, prefix="/api/pipelines", tags=["Pipelines"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
