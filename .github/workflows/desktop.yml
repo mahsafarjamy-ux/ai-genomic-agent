@@ -1,0 +1,57 @@
+name: BioVerse desktop
+on:
+  workflow_dispatch:
+  push:
+    branches: [bioverse-desktop]
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+          - os: windows-2025
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.arch }}
+      - run: python -m pip install pyinstaller==6.22.0
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --windowed --name BioVerse --osx-bundle-identifier ca.bioverse.personaldna desktop/app.py
+          mkdir installer
+          ditto dist/BioVerse.app installer/BioVerse.app
+          ln -s /Applications installer/Applications
+          hdiutil create -volname "BioVerse Personal DNA" -srcfolder installer -format UDZO "dist/BioVerse-macOS-${{ matrix.arch }}.dmg"
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --windowed --name BioVerse desktop/app.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          & $compiler desktop/windows.iss
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BioVerse-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*-Setup.exe
+          if-no-files-found: error

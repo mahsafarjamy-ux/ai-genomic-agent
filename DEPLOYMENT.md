@@ -41,3 +41,26 @@ The repository now persists job and critic records, exposes a queue boundary,
 supports configurable CORS, writes reproducibility manifests, and includes a
 worker container definition. Cloud account provisioning still requires your
 provider account, billing limit and secrets.
+
+## Personal DNA checkout and installers
+
+Set `FRONTEND_URL` to the website origin and configure the existing
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and one-time
+`STRIPE_PRICE_ESSENTIAL`, `STRIPE_PRICE_COMPLETE`, and `STRIPE_PRICE_LIFETIME`
+prices for the plans offered. Point the Stripe webhook at
+`/api/billing/webhook` on the API. The signed webhook grants account access.
+
+Extract these files from the desktop build artifacts. On Vercel, put them
+in a private Supabase Storage bucket named `personal-dna-installers`.
+Set `PERSONAL_DNA_STORAGE_URL` to the Supabase project HTTPS origin and
+`PERSONAL_DNA_STORAGE_KEY` to the backend-only service role key.
+The API issues two-minute download URLs after checking the account.
+For a container host, you can instead mount the files privately and set
+`PERSONAL_DNA_INSTALLER_DIR` to that directory.
+
+- `BioVerse-macOS-arm64.dmg`
+- `BioVerse-macOS-x64.dmg`
+- `BioVerse-Windows-x64-Setup.exe`
+
+The Personal DNA page lists the configured installers after payment. Test an entire Stripe test-mode checkout, a download, and an online
+analysis from the deployed website before switching to live payments.

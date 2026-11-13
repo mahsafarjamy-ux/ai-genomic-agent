@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import os
 import secrets
-from fastapi import APIRouter, HTTPException, Header, Request
+from urllib.parse import quote, urlsplit
+
+import httpx
+from pathlib import Path
+from fastapi import APIRouter, HTTPException, Header, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from core.flow.db import SessionLocal, User, DeviceActivation
 
@@ -60,15 +65,105 @@ PLAN_LIMITS: dict[str, dict] = {
     "enterprise": {"max_devices": 10, "can_analyze": True,  "label": "Enterprise", "price_usd": None},
 }
 
+PAID_PERSONAL_PLANS = frozenset({"essential", "complete", "lifetime", "enterprise"})
+DESKTOP_INSTALLERS = {
+    "mac-arm64": ("Mac (Apple Silicon)", "BioVerse-macOS-arm64.dmg"),
+    "mac-x64": ("Mac (Intel)", "BioVerse-macOS-x64.dmg"),
+    "windows-x64": ("Windows (64-bit)", "BioVerse-Windows-x64-Setup.exe"),
+}
+
 router = APIRouter()
 
 
 def _require_user(authorization: str, db) -> User:
     token = authorization.removeprefix("Bearer ").strip()
+    if not token or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Sign in to BioVerse to continue.")
     user = db.query(User).filter_by(token=token).first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid session")
     return user
+
+
+def _installer_storage():
+    origin = os.getenv("PERSONAL_DNA_STORAGE_URL", "").rstrip("/")
+    key = os.getenv("PERSONAL_DNA_STORAGE_KEY", "")
+    url = urlsplit(origin)
+    if url.scheme == "https" and url.hostname and not any(
+        (url.username, url.password, url.path, url.query, url.fragment)
+    ) and key:
+        return origin, key
+    return None
+
+
+def _desktop_installers() -> dict:
+    if _installer_storage():
+        return DESKTOP_INSTALLERS
+    directory = os.getenv("PERSONAL_DNA_INSTALLER_DIR")
+    if not directory:
+        return {}
+    return {
+        platform: (label, filename)
+        for platform, (label, filename) in DESKTOP_INSTALLERS.items()
+        if (Path(directory) / filename).is_file()
+    }
+
+
+def require_personal_access(authorization: str = Header(default="")) -> None:
+    with SessionLocal() as db:
+        user = _require_user(authorization, db)
+        if user.plan not in PAID_PERSONAL_PLANS:
+            raise HTTPException(403, "Purchase a Personal DNA plan to continue.")
+
+
+@router.get("/personal-access")
+def personal_access(response: Response, authorization: str = Header(default="")):
+    response.headers["Cache-Control"] = "private, no-store"
+    with SessionLocal() as db:
+        user = _require_user(authorization, db)
+        if user.plan not in PAID_PERSONAL_PLANS:
+            return {
+                "active": False,
+                "downloads": [],
+                "checkout_available": not os.getenv("VERCEL") or _installer_storage() is not None,
+            }
+        return {
+            "active": True,
+            "downloads": [
+                {"platform": platform, "label": label, "filename": filename}
+                for platform, (label, filename) in _desktop_installers().items()
+            ],
+        }
+
+
+@router.get("/personal-download/{platform}")
+def personal_download(platform: str, authorization: str = Header(default="")):
+    require_personal_access(authorization)
+    installer = _desktop_installers().get(platform)
+    if installer is None:
+        raise HTTPException(404, "This installer is currently unavailable.")
+    _, filename = installer
+    headers = {"Cache-Control": "private, no-store"}
+    storage = _installer_storage()
+    if storage:
+        origin, key = storage
+        bucket = quote(os.getenv("PERSONAL_DNA_STORAGE_BUCKET", "personal-dna-installers"), safe="")
+        try:
+            response = httpx.post(
+                f"{origin}/storage/v1/object/sign/{bucket}/{filename}",
+                headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                json={"expiresIn": 120},
+                timeout=10,
+            )
+            response.raise_for_status()
+            signed = response.json()["signedURL"]
+            if not signed.startswith("/object/sign/"):
+                raise ValueError("Unexpected signed URL.")
+        except (httpx.HTTPError, KeyError, TypeError, AttributeError, ValueError) as exc:
+            raise HTTPException(503, "This installer is temporarily unavailable.") from exc
+        return JSONResponse({"url": f"{origin}/storage/v1{signed}&download="}, headers=headers)
+    path = Path(os.environ["PERSONAL_DNA_INSTALLER_DIR"]) / filename
+    return FileResponse(path, filename=filename, media_type="application/octet-stream", headers=headers)
 
 
 @router.get("/plans")
@@ -94,6 +189,8 @@ def create_checkout(plan: str, authorization: str = Header(...), expected_amount
     db = SessionLocal()
     try:
         user = _require_user(authorization, db)
+        if os.getenv("VERCEL") and not _installer_storage():
+            raise HTTPException(503, "Personal DNA checkout will open once desktop downloads are available.")
         front = _frontend_url()
         price = _price(plan)
         if (expected_amount is not None and expected_amount != price["unit_amount"]) or (expected_currency is not None and expected_currency != price["currency"]):
@@ -107,7 +204,7 @@ def create_checkout(plan: str, authorization: str = Header(...), expected_amount
             payment_method_types=["card"],
             line_items=[{"price": price["id"], "quantity": 1}], mode="payment",
             client_reference_id=user.id,
-            success_url=front + "/account?tab=subscription&success=1",
+            success_url=front + "/personal?checkout=complete#personal-access",
             cancel_url=front + "/personal#pricing",
             metadata={"user_id": user.id, "plan": plan},
         )
@@ -168,7 +265,7 @@ async def stripe_webhook(request: Request):
             raise HTTPException(400, "Payment does not match the selected plan.")
         db = SessionLocal()
         try:
-            user = db.query(User).filter_by(id=uid).first()
+            user = db.query(User).filter_by(id=uid).with_for_update().first()
             if not user or user.stripe_customer_id != session.get("customer") or session.get("client_reference_id") != user.id:
                 raise HTTPException(400, "Payment account mismatch.")
             rank = {"free": 0, "trial": 0, "essential": 1, "complete": 2, "lifetime": 3, "enterprise": 4}
