@@ -191,7 +191,7 @@ export default function PersonalPage() {
   const [passportBlood, setPassportBlood] = useState("");
 
   const canAnalyze = Boolean(user && !loading && access?.active && !accessError);
-  const canPurchase = Boolean(user && !loading && access && !access.active && !accessError && !pendingPayment);
+  const canPurchase = Boolean(user && !loading && access && !access.active && access.checkout_available !== false && !accessError && !pendingPayment);
 
   function leaveAccount() {
     analysisRequest.current?.abort();
@@ -658,7 +658,8 @@ export default function PersonalPage() {
                       <button type="button" onClick={() => setAccessCheck(value => value + 1)}>Check access again</button>
                     </div>
                   )}
-                  {access && !canAnalyze && !pendingPayment && !accessError && <a href="#pricing">Choose a Personal DNA plan →</a>}
+                  {access?.checkout_available === false && <p>Checkout will open once desktop downloads are available.</p>}
+                  {canPurchase && <a href="#pricing">Choose a Personal DNA plan →</a>}
                   {canAnalyze && (
                     <div style={{ background: "#fff5f8", border: "1px solid #f5cfdf", borderRadius: 18, padding: 24, marginBottom: 36 }}>
                       <h2 style={{ fontSize: 22, fontWeight: 800 }}>Your Personal DNA access</h2>

@@ -122,7 +122,11 @@ def personal_access(response: Response, authorization: str = Header(default=""))
     with SessionLocal() as db:
         user = _require_user(authorization, db)
         if user.plan not in PAID_PERSONAL_PLANS:
-            return {"active": False, "downloads": []}
+            return {
+                "active": False,
+                "downloads": [],
+                "checkout_available": not os.getenv("VERCEL") or _installer_storage() is not None,
+            }
         return {
             "active": True,
             "downloads": [
@@ -185,6 +189,8 @@ def create_checkout(plan: str, authorization: str = Header(...), expected_amount
     db = SessionLocal()
     try:
         user = _require_user(authorization, db)
+        if os.getenv("VERCEL") and not _installer_storage():
+            raise HTTPException(503, "Personal DNA checkout will open once desktop downloads are available.")
         front = _frontend_url()
         price = _price(plan)
         if (expected_amount is not None and expected_amount != price["unit_amount"]) or (expected_currency is not None and expected_currency != price["currency"]):

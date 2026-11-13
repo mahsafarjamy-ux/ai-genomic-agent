@@ -36,7 +36,7 @@ export async function startCheckout(planId: string, quotedPlan: BillingPlan | un
 }
 
 type Installer = { platform: string; label: string; filename: string };
-export type PersonalAccess = { active: boolean; downloads: Installer[] };
+export type PersonalAccess = { active: boolean; downloads: Installer[]; checkout_available?: boolean };
 
 async function personalRequest(path: string, init?: RequestInit) {
   requireBackend();

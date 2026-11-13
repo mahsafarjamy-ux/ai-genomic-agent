@@ -124,7 +124,7 @@ def test_paid_personal_access_protects_download_and_online_analysis(env, tmp_pat
     assert e.client.get(access).status_code == 401
     assert e.client.get(download).status_code == 401
     assert e.client.post(analyze, files=files).status_code == 401
-    assert e.client.get(access, headers=e.headers).json() == {"active": False, "downloads": []}
+    assert e.client.get(access, headers=e.headers).json() == {"active": False, "downloads": [], "checkout_available": True}
     assert e.client.get(download, headers=e.headers).status_code == 403
     assert e.client.post(analyze, files=files, headers=e.headers).status_code == 403
 
@@ -162,3 +162,11 @@ def test_paid_installer_uses_short_lived_private_storage_url(env):
     assert response.json() == {"url": "https://storage.example/storage/v1" + signed_path + "&download="}
     assert response.headers["cache-control"] == "private, no-store"
     assert calls[0][1]["json"] == {"expiresIn": 120}
+
+
+def test_vercel_checkout_waits_for_installer_configuration(env):
+    env.patch.setenv("VERCEL", "1")
+    env.patch.delenv("PERSONAL_DNA_STORAGE_URL", raising=False)
+    response = env.client.post("/api/billing/checkout?plan=essential", headers=env.headers)
+    assert response.status_code == 503
+    assert not env.created
