@@ -5,8 +5,8 @@ from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, EmailStr, Field, model_validator
+from sqlalchemy import JSON, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.routers.counselling import current_user, db_session
@@ -26,12 +26,54 @@ class PetCase(Base):
     status: Mapped[str] = mapped_column(default="submitted")
     consented_at: Mapped[str]
     job_id: Mapped[str | None]
-    consent_version: Mapped[str] = mapped_column(default="pet-intake-v1")
+    consent_version: Mapped[str] = mapped_column(default="pet-intake-v2")
+    intake_details: Mapped[dict] = mapped_column(JSON)
+
+
+class OwnerDetails(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    phone: str = Field(min_length=7, max_length=40)
+    city: str = Field(min_length=1, max_length=100)
+    region: str = Field(min_length=1, max_length=100)
+    country: str = Field(min_length=1, max_length=100)
+    postal_code: str = Field(min_length=1, max_length=20)
+
+
+class PetDetails(BaseModel):
+    breed: str = Field(min_length=1, max_length=100)
+    age_years: float = Field(ge=0, le=35)
+    sex: Literal["female", "male", "unknown"]
+    weight_kg: float | None = Field(default=None, gt=0, le=150)
+    clinic: str = Field(min_length=1, max_length=160)
+    veterinarian: str = Field(default="", max_length=120)
+    clinic_email: EmailStr | None = None
+    diagnosis: str = Field(min_length=1, max_length=500)
+    tumor_site: str = Field(default="", max_length=120)
+    history: str = Field(default="", max_length=2000)
+
+
+class InsuranceDetails(BaseModel):
+    status: Literal["insured", "uninsured", "unsure"]
+    provider: str = Field(default="", max_length=120)
+    policy_number: str = Field(default="", max_length=120)
+    claim_number: str = Field(default="", max_length=120)
+
+    @model_validator(mode="after")
+    def check_policy(self):
+        if self.status == "insured" and not (self.provider.strip() and self.policy_number.strip()):
+            raise ValueError("Enter the insurer and policy number.")
+        if self.status != "insured" and any((self.provider, self.policy_number, self.claim_number)):
+            raise ValueError("Policy details require an insured status.")
+        return self
 
 
 class Intake(BaseModel):
     pet_name: str = Field(min_length=1, max_length=80)
     pathway: Literal["existing", "sequencing"]
+    owner: OwnerDetails
+    pet: PetDetails
+    insurance: InsuranceDetails
     consent: Literal[True]
 
 
@@ -52,7 +94,8 @@ def create_case(body: Intake, user=Depends(current_user), db=Depends(db_session)
     if not name:
         raise HTTPException(422, "Enter your dog's name.")
     case = PetCase(owner_id=user.id, pet_name=name, pathway=body.pathway,
-                   consented_at=_now().isoformat())
+                   consented_at=_now().isoformat(),
+                   intake_details=body.model_dump(mode="json", include={"owner", "pet", "insurance"}))
     db.add(case)
     db.commit()
     return summary(case)
@@ -89,6 +132,13 @@ def case_by_id(db, case_id):
     if not case:
         raise HTTPException(404, "Case not found.")
     return case
+
+
+@router.get("/staff/cases/{case_id}")
+def staff_intake(case_id: str, _=Depends(staff), db=Depends(db_session)):
+    case = case_by_id(db, case_id)
+    return {**summary(case), "intake": case.intake_details,
+            "consented_at": case.consented_at, "consent_version": case.consent_version}
 
 
 @router.post("/staff/cases/{case_id}/dispatch", status_code=202)

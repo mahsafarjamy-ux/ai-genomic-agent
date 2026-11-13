@@ -9,7 +9,7 @@ import { AuthForm } from "@/components/AuthSidePanel";
 const BASE = "http://localhost:8000";
 
 /* ── Reference genomes & annotation tools ───────────────────────────────── */
-export const COMMON_GENOMES: Array<{
+const COMMON_GENOMES: Array<{
   value: string; label: string; species: string; description: string;
   annotationTool: "VEP" | "ANNOVAR" | "SnpEff"; ensembl?: string;
 }> = [
@@ -46,7 +46,7 @@ export const COMMON_GENOMES: Array<{
   { value: "custom",  label: "Custom / non-model organism", species: "Other", description: "Provide your own FASTA + GTF. SnpEff builds a database automatically.", annotationTool: "SnpEff", ensembl: undefined },
 ];
 
-export const ANNOTATION_TOOL_INFO: Record<"VEP" | "ANNOVAR" | "SnpEff", { label: string; color: string; why: string; cmd: string }> = {
+const ANNOTATION_TOOL_INFO: Record<"VEP" | "ANNOVAR" | "SnpEff", { label: string; color: string; why: string; cmd: string }> = {
   VEP: {
     label: "Ensembl VEP",
     color: "#7c3aed",

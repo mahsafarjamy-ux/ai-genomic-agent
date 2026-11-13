@@ -26,3 +26,9 @@
 .options button[aria-pressed=true] {background:#174740;color:white}
 .note {max-width:48rem;color:#415c55}
 @media(max-width:720px){.paths{grid-template-columns:1fr}.feature{min-height:340px}}
+.fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1rem;border:0;border-top:1px solid #d8dfd7;padding-top:.5rem;margin-top:1.55rem }
+.fields legend {font-size:1.06rem;font-weight:750;padding-right:.75rem}
+.fields label {margin:.55rem 0}
+.fields input,.fields select,.fields textarea {display:block;margin-top:.3rem}
+.full {grid-column:1/-1}
+@media(max-width:580px){.fields{grid-template-columns:1fr}}
