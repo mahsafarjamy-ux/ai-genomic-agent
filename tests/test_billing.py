@@ -104,3 +104,61 @@ def test_webhook_signature_payment_matching_and_replay(env):
     with e.factory() as db:
         assert db.get(User,'u1').plan == 'lifetime'
         assert db.get(User,'u1').license_key == key
+
+
+def test_paid_personal_access_protects_download_and_online_analysis(env, tmp_path):
+    from api.routers import genome_personal
+
+    e = env
+    e.client.app.include_router(genome_personal.router, prefix="/api/genome-personal")
+    installer_dir = tmp_path / "installers"
+    installer_dir.mkdir()
+    installer = installer_dir / "BioVerse-macOS-arm64.dmg"
+    installer.write_bytes(b"sample installer")
+    e.patch.setenv("PERSONAL_DNA_INSTALLER_DIR", str(installer_dir))
+    access = "/api/billing/personal-access"
+    download = "/api/billing/personal-download/mac-arm64"
+    analyze = "/api/genome-personal/analyze"
+    files = {"file": ("sample.txt", b"# 23andMe\nrs762551\t15\t100\tAA\n")}
+
+    assert e.client.get(access).status_code == 401
+    assert e.client.get(download).status_code == 401
+    assert e.client.post(analyze, files=files).status_code == 401
+    assert e.client.get(access, headers=e.headers).json() == {"active": False, "downloads": []}
+    assert e.client.get(download, headers=e.headers).status_code == 403
+    assert e.client.post(analyze, files=files, headers=e.headers).status_code == 403
+
+    assert e.webhook().status_code == 200
+    assert e.client.get(access, headers=e.headers).json() == {
+        "active": True,
+        "downloads": [{"platform": "mac-arm64", "label": "Mac (Apple Silicon)", "filename": installer.name}],
+    }
+    response = e.client.get(download, headers=e.headers)
+    assert response.content == installer.read_bytes()
+    assert response.headers["cache-control"] == "private, no-store"
+    assert e.client.get("/api/billing/personal-download/mac-x64", headers=e.headers).status_code == 404
+    response = e.client.post(analyze, files=files, headers=e.headers)
+    assert response.status_code == 200
+    assert response.json()["summary"]["total_snps_found"] == 1
+
+
+def test_paid_installer_uses_short_lived_private_storage_url(env):
+    e = env
+    e.patch.setenv("PERSONAL_DNA_STORAGE_URL", "https://storage.example")
+    e.patch.setenv("PERSONAL_DNA_STORAGE_KEY", "test-server-key")
+    signed_path = "/object/sign/personal-dna-installers/BioVerse-macOS-arm64.dmg?token=test"
+    calls = []
+
+    def sign(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"signedURL": signed_path})
+
+    e.patch.setattr(b.httpx, "post", sign)
+    route = "/api/billing/personal-download/mac-arm64"
+    assert e.client.get(route, headers=e.headers).status_code == 403
+    assert not calls
+    assert e.webhook().status_code == 200
+    response = e.client.get(route, headers=e.headers)
+    assert response.json() == {"url": "https://storage.example/storage/v1" + signed_path + "&download="}
+    assert response.headers["cache-control"] == "private, no-store"
+    assert calls[0][1]["json"] == {"expiresIn": 120}

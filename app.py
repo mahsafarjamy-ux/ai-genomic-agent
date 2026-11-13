@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import auth, billing, counselling
+from api.routers import auth, billing, counselling, genome_personal
 from core.flow.db import init_db
 
 
@@ -59,6 +59,7 @@ def health():
 
 app.include_router(auth.router, prefix='/api/auth')
 app.include_router(billing.router, prefix='/api/billing')
+app.include_router(genome_personal.router, prefix='/api/genome-personal')
 app.include_router(counselling.router, prefix='/api/counselling')
 
 

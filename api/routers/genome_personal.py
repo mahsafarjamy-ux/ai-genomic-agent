@@ -1,17 +1,19 @@
 """
 Personal Genome Analysis API
 Accepts 23andMe / AncestryDNA / MyHeritage / FamilyTreeDNA raw data files.
-Analyzes ~200 key SNPs for health, medication response, diet, and fitness.
+Analyzes selected markers from the built-in reference panel.
 
-Privacy guarantee: the file is parsed in memory and immediately discarded.
-No genomic data is written to disk or stored anywhere.
+The online analyzer receives the uploaded file and returns a report.
 """
 
+import csv
+import gzip
 import io
 import re
 import zipfile
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
+from zlib import error as CompressionError
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Response
+from api.routers.billing import require_personal_access
 
 router = APIRouter()
 
@@ -398,16 +400,16 @@ def _parse_genome_file(content: str) -> tuple[dict[str, str], str]:
         return {}, source
 
     # Detect column format from first non-comment, non-blank line
-    first = data_lines[0].lower().split("\t")
+    delimiter = "\t" if "\t" in data_lines[0] else ","
+    first = next(csv.reader([data_lines[0].lower()], delimiter=delimiter))
     has_allele_cols = "allele1" in first or (len(first) >= 5)
 
     genotypes: dict[str, str] = {}
-    for line in data_lines[1:]:  # skip header row
-        parts = line.strip().split("\t")
+    for parts in csv.reader(data_lines, delimiter=delimiter):  # non-variant headers are filtered below
         if len(parts) < 4:
             continue
         rsid = parts[0].strip()
-        if not rsid.startswith("rs"):
+        if not re.fullmatch(r"rs\d+", rsid):
             continue
         if has_allele_cols and len(parts) >= 5:
             # AncestryDNA / MyHeritage / FTDNA: allele1 + allele2
@@ -419,17 +421,34 @@ def _parse_genome_file(content: str) -> tuple[dict[str, str], str]:
     return genotypes, source
 
 
+MAX_GENOME_BYTES = 64 * 1024 * 1024
+
+
 async def _read_content(file: UploadFile) -> str:
-    raw = await file.read()
-    # Handle .zip files (23andMe downloads as zip)
-    if raw[:2] == b"PK":
-        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-            txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
-            if not txt_files:
-                raise HTTPException(400, "ZIP file does not contain a .txt genome file")
-            raw = zf.read(txt_files[0])
+    raw = await file.read(MAX_GENOME_BYTES + 1)
+    if len(raw) > MAX_GENOME_BYTES:
+        raise HTTPException(413, "DNA export exceeds the 64 MiB limit.")
     try:
-        return raw.decode("utf-8")
+        if raw.startswith(b"PK"):
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                entries = [
+                    entry for entry in archive.infolist()
+                    if not entry.is_dir() and not entry.filename.startswith("__MACOSX/")
+                    and entry.filename.lower().endswith((".txt", ".tsv", ".csv"))
+                ]
+                if len(entries) != 1:
+                    raise HTTPException(400, "The ZIP must contain one raw DNA export.")
+                with archive.open(entries[0]) as stream:
+                    raw = stream.read(MAX_GENOME_BYTES + 1)
+        elif raw.startswith(b"\x1f\x8b"):
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+                raw = stream.read(MAX_GENOME_BYTES + 1)
+    except (OSError, EOFError, RuntimeError, NotImplementedError, zipfile.BadZipFile, CompressionError) as exc:
+        raise HTTPException(400, "Could not open the compressed DNA export.") from exc
+    if len(raw) > MAX_GENOME_BYTES:
+        raise HTTPException(413, "The unpacked DNA export exceeds the 64 MiB limit.")
+    try:
+        return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         return raw.decode("latin-1")
 
@@ -448,13 +467,14 @@ _CATEGORY_META = {
 
 # ── Endpoint ─────────────────────────────────────────────────────────────
 
-@router.post("/analyze")
-async def analyze_genome(file: UploadFile = File(...)):
+@router.post("/analyze", dependencies=[Depends(require_personal_access)])
+async def analyze_genome(response: Response, file: UploadFile = File(...)):
     """
     Accepts a raw genome file from 23andMe, AncestryDNA, MyHeritage, or FamilyTreeDNA.
-    Returns categorized health insights based on ~200 key genetic markers.
-    The file is read into memory and immediately discarded — nothing is persisted.
+    Returns categorized findings from the built-in reference panel.
+    The endpoint returns a report for the uploaded file.
     """
+    response.headers["Cache-Control"] = "private, no-store"
     if not file.filename:
         raise HTTPException(400, "No file provided")
 
@@ -531,8 +551,7 @@ async def analyze_genome(file: UploadFile = File(...)):
         },
         "categories": categories_out,
         "privacy_note": (
-            "This analysis ran entirely on your device. "
-            "Your raw genetic data was never stored, transmitted, or logged anywhere. "
+            "BioVerse processed your file through its online analysis API. "
             "Results are for educational purposes only — always discuss with your doctor."
         ),
     }

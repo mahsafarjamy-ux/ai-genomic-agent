@@ -6,7 +6,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuthOptional } from "@/hooks/useAuthOptional";
 import { AuthForm } from "@/components/AuthSidePanel";
 import TrustPanel from "@/components/TrustPanel";
-import { BillingPlan, getBillingPlans, displayPrice, startCheckout } from "@/lib/billing";
+import { BillingPlan, PersonalAccess, analyzePersonalFile, downloadInstaller, getBillingPlans, getPersonalAccess, displayPrice, startCheckout } from "@/lib/billing";
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 interface InsightCard {
@@ -34,67 +34,20 @@ interface AnalysisResult {
 
 /* ── Feature bubbles shown in hero ─────────────────────────────────────── */
 const INSIGHT_PILLS = [
-  { emoji: "💊", text: "Ozempic / GLP-1 response",       color: "#e44c81", bg: "#fff5f8" },
-  { emoji: "☕", text: "Caffeine metabolism (CYP1A2)",    color: "#b46309", bg: "#fffbf0" },
-  { emoji: "🏃", text: "Power vs. endurance muscle type", color: "#16a34a", bg: "#f0fdf4" },
-  { emoji: "🧠", text: "Sleep chronotype & insomnia",     color: "#7c3aed", bg: "#f5f3ff" },
-  { emoji: "❤️", text: "APOE longevity & heart risk",     color: "#dc2626", bg: "#fff5f5" },
-  { emoji: "💊", text: "Warfarin & blood thinner dosing", color: "#e44c81", bg: "#fff5f8" },
-  { emoji: "🥗", text: "MTHFR / folate variants",         color: "#b46309", bg: "#fffbf0" },
-  { emoji: "🛡️", text: "HLA autoimmune tendencies",       color: "#0891b2", bg: "#f0f9ff" },
-  { emoji: "💊", text: "Statin side-effect risk (SLCO1B1)", color: "#e44c81", bg: "#fff5f8" },
-  { emoji: "🧬", text: "BRCA1/2 & cancer risk markers",   color: "#dc2626", bg: "#fff5f5" },
-  { emoji: "🥗", text: "Vitamin D & omega-3 absorption",  color: "#16a34a", bg: "#f0fdf4" },
-  { emoji: "🧠", text: "Dopamine & stress resilience",    color: "#7c3aed", bg: "#f5f3ff" },
+  { emoji: "☕", text: "Caffeine metabolism", color: "#b46309", bg: "#fffbf0" },
+  { emoji: "🏃", text: "Muscle protein markers", color: "#16a34a", bg: "#f0fdf4" },
 ];
 
 /* ── Pricing ────────────────────────────────────────────────────────────── */
 const PRICING = [
-  {
-    tier: "Essential",
-    price: "$79",
-    period: "one-time",
-    color: "#f05808",
-    features: [
-      "Medication & drug response (50+ drugs)",
-      "Diet & nutrition blueprint",
-      "Fitness & body type insights",
-      "PDF report download",
-      "Analyzed on your device",
-    ],
-  },
-  {
-    tier: "Complete",
-    price: "$199",
-    period: "one-time",
-    color: "#e44c81",
-    badge: "Most Popular",
-    features: [
-      "Everything in Essential",
-      "Sleep & mental wellness",
-      "Heart & longevity markers",
-      "Immunity & allergy risk",
-      "1,500+ SNP analysis",
-      "Disease risk factors (ClinVar)",
-      "AI-generated action plan",
-      "Pharmacogenomics deep-dive",
-    ],
-  },
-  {
-    tier: "Lifetime",
-    price: "$399",
-    period: "one-time",
-    color: "#7c3aed",
-    features: [
-      "Everything in Complete",
-      "Offline desktop app — no internet ever",
-      "Re-run as science improves",
-      "Priority support",
-      "Family sharing (2 genomes)",
-      "Clinical PDF for your doctor",
-    ],
-  },
-];
+  { tier: "Essential", color: "#f05808" },
+  { tier: "Complete", color: "#e44c81" },
+  { tier: "Lifetime", color: "#7c3aed" },
+].map(plan => ({
+  ...plan,
+  period: "one-time",
+  features: ["Online Personal DNA report", "Offline desktop pilot for Mac and Windows"],
+}));
 
 /* ── Impact badge ───────────────────────────────────────────────────────── */
 function ImpactBadge({ level }: { level: Finding["impact_level"] }) {
@@ -130,7 +83,7 @@ function alertColor(level: Finding["impact_level"]) {
 /* ── Main page ──────────────────────────────────────────────────────────── */
 export default function PersonalPage() {
   const { user, loading, refresh, signOut } = useAuthOptional();
-  const [step, setStep]             = useState<"preview" | "uploading" | "analyzing" | "results">("preview");
+  const [step, setStep]             = useState<"preview" | "analyzing" | "results">("preview");
   const [dragOver, setDragOver]     = useState(false);
   const [fileName, setFileName]     = useState("");
   const [error, setError]           = useState("");
@@ -139,7 +92,47 @@ export default function PersonalPage() {
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
-  const [paymentSignIn, setPaymentSignIn] = useState(false);
+  const [access, setAccess] = useState<PersonalAccess | null>(null);
+  const [accessError, setAccessError] = useState("");
+  const [accessCheck, setAccessCheck] = useState(0);
+  const [pendingPayment, setPendingPayment] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [downloading, setDownloading] = useState("");
+  const analysisRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!user || loading) return;
+    const controller = new AbortController();
+    const returning = new URLSearchParams(window.location.search).get("checkout") === "complete";
+    let timer: number | undefined;
+    let attempts = returning ? 15 : 1;
+    async function check() {
+      try {
+        const current = await getPersonalAccess(controller.signal);
+        if (controller.signal.aborted) return;
+        setAccess(current);
+        setAccessError("");
+        if (!current.active && --attempts > 0) {
+          setPendingPayment(true);
+          timer = window.setTimeout(check, 2000);
+        } else {
+          setPendingPayment(false);
+          if (returning && !current.active) {
+            setAccessError("Payment has not been confirmed yet. If you already paid, check again before starting another checkout.");
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setPendingPayment(false);
+        setAccessError(error instanceof Error ? error.message : "Unable to check your plan.");
+      }
+    }
+    void check();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [user, loading, accessCheck]);
   const [billingPlans, setBillingPlans] = useState<BillingPlan[]>([]);
 
   useEffect(() => {
@@ -148,8 +141,8 @@ export default function PersonalPage() {
 
   async function purchase(tier: string) {
     setSelectedTier(tier); setPaymentError("");
-    if (!localStorage.getItem("genomics_token")) { setPaymentSignIn(true); return; }
-    setPaymentSignIn(false); setPaymentLoading(true);
+    if (!canPurchase || paymentLoading) return;
+    setPaymentLoading(true);
     try { window.location.assign(await startCheckout(tier.toLowerCase(), billingPlans.find(plan => plan.id === tier.toLowerCase()))); }
     catch (err) { setPaymentError(err instanceof Error ? err.message : "Checkout is unavailable. Please try again."); }
     finally { setPaymentLoading(false); }
@@ -197,42 +190,46 @@ export default function PersonalPage() {
   const [passportDob, setPassportDob]     = useState("");
   const [passportBlood, setPassportBlood] = useState("");
 
-  const canAnalyze = !!user;
+  const canAnalyze = Boolean(user && !loading && access?.active && !accessError);
+  const canPurchase = Boolean(user && !loading && access && !access.active && !accessError && !pendingPayment);
+
+  function leaveAccount() {
+    analysisRequest.current?.abort();
+    setAccess(null);
+    setAccessError("");
+    setPendingPayment(false);
+    setResults(null);
+    setFileName("");
+    setPassportName("");
+    setPassportDob("");
+    setPassportBlood("");
+    setShowPassport(false);
+    setStep("preview");
+    signOut();
+  }
 
   const handleFile = useCallback(async (file: File) => {
-    if (!file) return;
+    if (!canAnalyze || analysisRequest.current) return;
+    const controller = new AbortController();
+    analysisRequest.current = controller;
     setFileName(file.name);
     setError("");
-    setStep("uploading");
-
-    await new Promise(r => setTimeout(r, 800));
     setStep("analyzing");
-
-    const form = new FormData();
-    form.append("file", file);
-
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("genomics_token") : null;
-      const res = await fetch("http://localhost:8000/api/genome-personal/analyze", {
-        method: "POST",
-        body: form,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-        throw new Error(err.detail || "Analysis failed");
-      }
-      const data: AnalysisResult = await res.json();
+      const data: AnalysisResult = await analyzePersonalFile(file, controller.signal);
+      if (controller.signal.aborted) return;
       setResults(data);
       setStep("results");
       setAnalysisDate(new Date().toISOString());
       if (data.categories.length > 0) setOpenCategory(data.categories[0].category);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Analysis failed";
-      setError(msg);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setError(error instanceof Error ? error.message : "Analysis failed");
       setStep("preview");
+    } finally {
+      analysisRequest.current = null;
     }
-  }, []);
+  }, [canAnalyze]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -270,14 +267,14 @@ export default function PersonalPage() {
               }}>
                 ✓ {user.name.split(" ")[0]}
               </span>
-              <button onClick={signOut} style={{
+              <button onClick={leaveAccount} style={{
                 fontSize: 11, color: "#9c9892", background: "none",
                 border: "none", cursor: "pointer",
               }}>Sign out</button>
             </div>
           )}
           <span style={{ fontSize: 11, color: "#9c9892", background: "#f3f3f3", borderRadius: 20, padding: "3px 10px" }}>
-            🔒 Analyzed on your device
+            Personal DNA
           </span>
           <a href="/gateway" style={{
             fontSize: 12, color: "#6b6760", textDecoration: "none",
@@ -437,33 +434,6 @@ export default function PersonalPage() {
             </div>
           ))}
 
-          <div style={{
-            marginTop: "2.5rem",
-            background: "linear-gradient(135deg, #1c1a16, #2a2620)",
-            borderRadius: 20,
-            padding: "2rem 2.25rem",
-            color: "#fff",
-            display: "flex", alignItems: "center", flexWrap: "wrap", gap: "1rem",
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>Unlock the full report</div>
-              <div style={{ fontSize: 13, color: "#c0bdb8", lineHeight: 1.6 }}>
-                This preview covers ~20 key markers. The complete report analyzes 1,500+ SNPs,
-                includes your full pharmacogenomics profile, disease risk factors, and an AI-generated
-                action plan for your doctor.
-              </div>
-            </div>
-            <button
-              onClick={() => { setStep("preview"); setTimeout(() => document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" }), 100); }}
-              style={{
-                padding: "10px 22px", borderRadius: 12, border: "none",
-                background: "#e44c81", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer",
-              }}
-            >
-              See plans →
-            </button>
-          </div>
-
           {/* Trust & Provenance Panel */}
           <TrustPanel
             provenance={{
@@ -471,8 +441,8 @@ export default function PersonalPage() {
               toolVersion: "1.0",
               inputFile: results.summary.file_source,
               runDate: analysisDate || new Date().toISOString(),
-              analysisMode: "SNP pattern matching (device-local)",
-              referenceDb: "ClinVar / dbSNP reference SNPs",
+              analysisMode: "SNP pattern matching (online)",
+              referenceDb: "BioVerse marker panel",
               sampleId: user?.name ?? "anonymous",
               status: "complete",
               parameters: {
@@ -515,8 +485,8 @@ export default function PersonalPage() {
               {
                 name: "Privacy",
                 status: "pass",
-                value: "100% on-device",
-                detail: "Your DNA file was never transmitted — all analysis ran locally",
+                value: "Online analysis",
+                detail: "BioVerse received your file to generate the report",
               },
             ]}
             findings={results.categories.flatMap(cat =>
@@ -532,14 +502,13 @@ export default function PersonalPage() {
             )}
             warnings={[
               "This is a research preview covering ~20 key markers — not a medical test.",
-              "Upgrade to Complete or Lifetime for 1,500+ SNP analysis.",
             ]}
             pipelineSteps={[
-              "Raw DNA file read and parsed on your device",
+              "Raw DNA file parsed by the online analyzer",
               "SNP identifiers matched against reference database",
               "Variant impact classified (high / moderate / low / protective)",
               "Insights grouped by health category",
-              "AI-generated plain-language explanations compiled",
+              "Report assembled from the built-in marker panel",
             ]}
             interpretationNotes={[
               "Candidate findings based on available uploaded data only",
@@ -553,26 +522,24 @@ export default function PersonalPage() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* UPLOAD / LOADING STATES */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {(step === "uploading" || step === "analyzing") && (
+      {step === "analyzing" && (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", minHeight: "60vh", gap: "1.5rem",
         }}>
-          <div style={{ fontSize: 64 }}>{step === "uploading" ? "📂" : "🧬"}</div>
+          <div style={{ fontSize: 64 }}>🧬</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#1c1a16" }}>
-            {step === "uploading" ? "Reading your file…" : "Analyzing your genome…"}
+            Analyzing your DNA…
           </div>
           <div style={{ fontSize: 14, color: "#9c9892", maxWidth: 400, textAlign: "center" }}>
-            {step === "uploading"
-              ? `Loaded: ${fileName}`
-              : "Checking 1,500+ genetic markers locally on your device — nothing is sent to any server."}
+            {`Checking markers in ${fileName}…`}
           </div>
           <div style={{ width: 320, height: 4, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
             <div style={{
               height: "100%",
               background: "linear-gradient(90deg, #f05808, #e44c81)",
               borderRadius: 4,
-              width: step === "uploading" ? "30%" : "75%",
+              width: "75%",
               transition: "width 0.8s ease",
             }} />
           </div>
@@ -641,8 +608,7 @@ export default function PersonalPage() {
             {/* CTAs */}
             <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
               <a
-                href="#download"
-                onClick={e => { e.preventDefault(); document.getElementById("download-section")?.scrollIntoView({ behavior: "smooth" }); }}
+                href="#personal-access"
                 style={{
                   padding: "14px 28px", borderRadius: 14,
                   background: "#1c1a16", color: "#fff",
@@ -673,61 +639,60 @@ export default function PersonalPage() {
             maxWidth: 700,
             margin: "0 auto",
           }}>
-            {!loading && !canAnalyze && (
-              <div>
-                <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "0.5rem" }}>
-                  Sign in to analyze your DNA
-                </h2>
-                <p style={{ fontSize: 14, color: "#6b6760", marginBottom: "2rem", lineHeight: 1.6 }}>
-                  Sign in so only <strong>you</strong> can access your results — no one else,
-                  not even us. Your file is processed by your local app or browser. It is never sent to our servers.
-                </p>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
-                  <AuthForm
-                    onSuccess={() => refresh()}
-                    benefits={[
-                      "Only you can see your results",
-                      "Save & re-run your report anytime",
-                      "AI-generated action plan",
-                      "Share securely with your doctor",
-                    ]}
-                  />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {/* Offline app callout */}
-                    <div id="download-section" style={{
-                      borderRadius: 18, padding: "1.5rem",
-                      background: "#f8f8f8", border: "1px solid #e8e8e8",
-                    }}>
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>📴</div>
-                      <h3 style={{ fontWeight: 800, fontSize: 15, marginBottom: 6 }}>
-                        Prefer fully offline?
-                      </h3>
-                      <p style={{ fontSize: 13, color: "#6b6760", lineHeight: 1.6, marginBottom: "1rem" }}>
-                        Download the desktop app. It runs with <strong>no internet connection at all</strong> —
-                        no sign-in, no server, nothing leaves your machine.
-                        Available with the Lifetime plan.
-                      </p>
-                      <a href="#pricing"
-                        onClick={e => { e.preventDefault(); document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" }); }}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6,
-                          padding: "10px 18px", borderRadius: 12,
-                          background: "#1c1a16", color: "#fff",
-                          fontWeight: 700, fontSize: 13, textDecoration: "none",
-                        }}>
-                        ⬇ See Lifetime Plan
+            <div id="personal-access" style={{ scrollMarginTop: 96 }}>
+              {loading && <p role="status">Checking your account…</p>}
+              {!loading && !user && (
+                <>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 12 }}>Sign in or create an account</h2>
+                  <p style={{ marginBottom: 16 }}>Sign in to choose a Personal DNA plan or access a plan you already purchased.</p>
+                  <AuthForm onSuccess={refresh} />
+                </>
+              )}
+              {user && !loading && (
+                <>
+                  {!access && !accessError && <p role="status">Checking your plan…</p>}
+                  {pendingPayment && <p role="status">Waiting for Stripe to confirm your payment…</p>}
+                  {accessError && (
+                    <div>
+                      <p role="alert">{accessError}</p>
+                      <button type="button" onClick={() => setAccessCheck(value => value + 1)}>Check access again</button>
+                    </div>
+                  )}
+                  {access && !canAnalyze && !pendingPayment && !accessError && <a href="#pricing">Choose a Personal DNA plan →</a>}
+                  {canAnalyze && (
+                    <div style={{ background: "#fff5f8", border: "1px solid #f5cfdf", borderRadius: 18, padding: 24, marginBottom: 36 }}>
+                      <h2 style={{ fontSize: 22, fontWeight: 800 }}>Your Personal DNA access</h2>
+                      <p style={{ margin: "8px 0 16px" }}>Download the offline desktop pilot or use the online report.</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {access?.downloads.map(installer => (
+                          <button key={installer.platform} type="button" disabled={Boolean(downloading)} style={{
+                            background: "#fff", border: "1px solid #e7b6cb", padding: "8px 12px", borderRadius: 8,
+                          }} onClick={async () => {
+                            setDownloading(installer.platform);
+                            setDownloadError("");
+                            try {
+                              await downloadInstaller(installer);
+                            } catch (error) {
+                              setDownloadError(error instanceof Error ? error.message : "Download failed.");
+                            } finally {
+                              setDownloading("");
+                            }
+                          }}>{downloading === installer.platform ? "Downloading…" : `Download for ${installer.label}`}</button>
+                        ))}
+                      </div>
+                      {!access?.downloads.length && <p>Desktop installers are temporarily unavailable.</p>}
+                      {downloadError && <p role="alert">{downloadError}</p>}
+                      <a href="#online-analysis" style={{ display: "inline-block", marginTop: 16, color: "#9b2753", fontWeight: 700 }}>
+                        Analyze your DNA with our online service →
                       </a>
                     </div>
+                  )}
+                </>
+              )}
+            </div>
 
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Upload zone — shown when signed in or bypassed */}
-            {!loading && canAnalyze && (
-              <div>
+            {canAnalyze && (
+              <div id="online-analysis" style={{ scrollMarginTop: 96 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem" }}>
                   <div style={{
                     display: "inline-flex", alignItems: "center", gap: 6,
@@ -744,7 +709,7 @@ export default function PersonalPage() {
                 </h2>
                 <p style={{ fontSize: 13, color: "#6b6760", marginBottom: "1.5rem" }}>
                   Download your raw data file from 23andMe, AncestryDNA, MyHeritage, or FamilyTreeDNA
-                  (look for &ldquo;Download Raw Data&rdquo; in their account settings). Accepts .txt and .zip files.
+                  (look for &ldquo;Download Raw Data&rdquo; in their account settings). Accepts TXT, TSV, CSV, ZIP, and GZ exports. Your file is sent to BioVerse to generate the online report.
                 </p>
 
                 <div
@@ -770,7 +735,7 @@ export default function PersonalPage() {
                     {dragOver ? "Drop your file here" : "Drop your DNA file here"}
                   </div>
                   <div style={{ fontSize: 13, color: "#9c9892", marginBottom: "1.5rem" }}>
-                    or click to browse · .txt and .zip
+                    or click to browse
                   </div>
                   <button style={{
                     padding: "12px 28px", borderRadius: 12, border: "none",
@@ -783,7 +748,7 @@ export default function PersonalPage() {
                   <input
                     ref={fileRef}
                     type="file"
-                    accept=".txt,.zip,.csv,.tsv,.gz"
+                    accept=".txt,.tsv,.csv,.zip,.gz"
                     style={{ display: "none" }}
                     onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
                   />
@@ -801,7 +766,7 @@ export default function PersonalPage() {
                 )}
 
                 <p style={{ fontSize: 12, color: "#b0afaa", marginTop: "1rem", textAlign: "center" }}>
-                  🔒 Processed on your device. Never stored or transmitted to any server.
+                  For fully offline processing, use the desktop app.
                 </p>
               </div>
             )}
@@ -870,20 +835,15 @@ export default function PersonalPage() {
           <section style={{ padding: "4rem 1.5rem", maxWidth: 820, margin: "0 auto", textAlign: "center" }}>
             <div style={{ fontSize: 48, marginBottom: "1rem" }}>🔒</div>
             <h2 style={{ fontSize: "clamp(1.4rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "0.75rem" }}>
-              Your DNA data stays on your device
+              Choose how your DNA is processed
             </h2>
             <p style={{ fontSize: 15, color: "#6b6760", lineHeight: 1.7, maxWidth: 560, margin: "0 auto 2rem" }}>
-              Unlike 23andMe or AncestryDNA — which store your genome on their servers indefinitely —
-              this analysis runs entirely inside your browser or our desktop app.
-              Your raw file is <strong>never transmitted to any server</strong>.
-              The Lifetime plan includes a fully offline desktop app that works with no internet at all.
+              The desktop app analyzes your file offline. Online analysis sends your file to BioVerse to generate the report.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", maxWidth: 700, margin: "0 auto" }}>
               {[
-                { icon: "🏠", text: "Analysis runs on your device, not our servers" },
-                { icon: "🚫", text: "We never receive your raw DNA file" },
-                { icon: "📴", text: "Fully offline desktop app available" },
-                { icon: "🗑️", text: "Delete everything anytime, instantly" },
+                { icon: "📴", text: "Offline desktop analysis" },
+                { icon: "🌐", text: "Online report through BioVerse" },
               ].map(p => (
                 <div key={p.icon} style={{
                   background: "#f8f8f8", borderRadius: 14,
@@ -911,7 +871,7 @@ export default function PersonalPage() {
                 One-time payment. No subscriptions.
               </h2>
               <p style={{ fontSize: 14, color: "#6b6760", marginTop: "0.6rem" }}>
-                Pay once, use forever. Your report is yours to keep.
+                Each paid plan includes online analysis and the offline desktop pilot.
               </p>
             </div>
 
@@ -922,24 +882,14 @@ export default function PersonalPage() {
                   onClick={() => setSelectedTier(p.tier)}
                   style={{
                     borderRadius: 20,
-                    border: `2px solid ${selectedTier === p.tier ? p.color : p.badge ? p.color : "#e8e8e8"}`,
+                    border: `2px solid ${selectedTier === p.tier ? p.color : "#e8e8e8"}`,
                     padding: "2rem 1.75rem",
                     background: "#fff",
                     cursor: "pointer",
                     position: "relative",
-                    boxShadow: p.badge ? "0 8px 32px rgba(0,0,0,0.08)" : "none",
                     transition: "all 0.18s",
                   }}
                 >
-                  {p.badge && (
-                    <div style={{
-                      position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)",
-                      background: p.color, color: "#fff", fontSize: 11, fontWeight: 700,
-                      padding: "3px 14px", borderRadius: 20,
-                    }}>
-                      {p.badge}
-                    </div>
-                  )}
                   <div style={{ fontSize: 13, fontWeight: 700, color: p.color, marginBottom: 6 }}>{p.tier}</div>
                   <div style={{ fontSize: 36, fontWeight: 900, color: "#1c1a16", letterSpacing: "-0.04em", marginBottom: 2 }}>
                     {billingPlans.find(plan => plan.id === p.tier.toLowerCase()) ? displayPrice(billingPlans.find(plan => plan.id === p.tier.toLowerCase())!) : "Price unavailable"}
@@ -958,7 +908,7 @@ export default function PersonalPage() {
                   </ul>
                   <button
                     onClick={event => { event.stopPropagation(); void purchase(p.tier); }}
-                    disabled={paymentLoading}
+                    disabled={paymentLoading || !canPurchase}
                     style={{
                       marginTop: "1.5rem",
                       width: "100%",
@@ -979,14 +929,12 @@ export default function PersonalPage() {
               ))}
             </div>
 
+            {!loading && !user && <p style={{ textAlign: "center", marginTop: 20 }}><a href="#personal-access">Sign in or create an account to choose a plan →</a></p>}
+            {canAnalyze && <p style={{ textAlign: "center", marginTop: 20 }}><a href="#personal-access">Open your Personal DNA access →</a></p>}
             {paymentError && <p role="alert" style={{ color: "#a52f25", textAlign: "center", marginTop: 20 }}>{paymentError}</p>}
-            {paymentSignIn && <div style={{ maxWidth: 420, margin: "24px auto" }}>
-              <p style={{ marginBottom: 12 }}>Sign in or create your BioVerse account to purchase {selectedTier}. Your Stripe account is not needed.</p>
-              <AuthForm onSuccess={() => { refresh(); if (selectedTier) void purchase(selectedTier); }} />
-            </div>}
             {selectedTier && (
               <div style={{ textAlign: "center", marginTop: "2rem" }}>
-                <button onClick={() => void purchase(selectedTier)} disabled={paymentLoading} style={{
+                <button onClick={() => void purchase(selectedTier)} disabled={paymentLoading || !canPurchase} style={{
                   padding: "14px 40px", borderRadius: 14, border: "none",
                   background: "linear-gradient(135deg, #e44c81, #f05808)",
                   color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer",
@@ -995,7 +943,7 @@ export default function PersonalPage() {
                   {paymentLoading ? "Opening checkout…" : `Continue with ${selectedTier} →`}
                 </button>
                 <p style={{ fontSize: 12, color: "#9c9892", marginTop: "0.75rem" }}>
-                  Secure checkout · 30-day money-back guarantee
+                  Secure Stripe checkout
                 </p>
               </div>
             )}
@@ -1009,11 +957,11 @@ export default function PersonalPage() {
             {[
               {
                 q: "Does my DNA file get uploaded to a server?",
-                a: "No. Your file is opened directly in your browser or our desktop app. It is processed locally on your device and never transmitted to us or any third party. The desktop app works with no internet connection at all.",
+                a: "The desktop app works offline and keeps your file on your device. The online option sends the file to BioVerse for analysis.",
               },
               {
                 q: "Why do I need to sign in if the analysis is local?",
-                a: "Sign-in ensures only you can see your results. Without it, anyone on the same browser could open the report. We authenticate you locally — your token is stored on your device, and we never receive your DNA data.",
+                a: "Your account connects your payment to your access to the online report and the desktop installers.",
               },
               {
                 q: "What file do I need?",
@@ -1021,7 +969,7 @@ export default function PersonalPage() {
               },
               {
                 q: "What's the difference between this and 23andMe's Health reports?",
-                a: "We analyze significantly more genetic markers (1,500+ vs. a few hundred) and focus especially on pharmacogenomics — how your genes affect medication response. Critically, your data never leaves your device, unlike 23andMe.",
+                a: "BioVerse analyzes selected markers from your existing raw DNA export. The offline desktop pilot covers two educational markers.",
               },
             ].map(f => (
               <details key={f.q} style={{ marginBottom: "0.75rem" }}>
@@ -1399,7 +1347,7 @@ export default function PersonalPage() {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 10, color: "#9c9892" }}>Generated by AI Genomics Agent</div>
-                      <div style={{ fontSize: 10, color: "#9c9892" }}>{today} · Privacy-first · Data processed locally</div>
+                      <div style={{ fontSize: 10, color: "#9c9892" }}>{today} · Privacy-first · Online analysis</div>
                     </div>
                   </div>
 

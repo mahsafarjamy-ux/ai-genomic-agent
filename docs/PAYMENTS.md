@@ -10,7 +10,7 @@ Virtual consultation checkout has separate booking fulfilment and its own webhoo
 
 For the Supabase deployment, `DATABASE_SCHEMA=bioverse_private` selects a private schema through SQLAlchemy schema translation. The reviewed schema snapshot is `database/bioverse_private.sql`; it creates the application tables with RLS enabled and denies schema/table access to Supabase client roles. These tables use BioVerse server authentication, not Supabase Auth JWT policies. Keep the schema out of the Data API exposed-schema list. Use the exact Transaction pooler connection string from the project Connect dialog on Vercel (TLS required); a direct IPv6-only endpoint is not suitable. Keep the database password only in the backend `DATABASE_URL` secret.
 
-The root `app.py` and minimal `requirements.txt` deploy the existing account, payment and counselling routers as a separate Vercel FastAPI project. The Next.js website remains in `web`. Set `DATABASE_URL` to a durable PostgreSQL database (pooled connection URL with TLS), `FRONTEND_URL` to the website origin, and `CORS_ORIGINS` to that same origin. The cloud entrypoint does not mount local file or genomic processing endpoints. Vercel connections use SQLAlchemy NullPool. Keep existing database data and back it up before connecting; do not point the cloud app at a new database expecting old local accounts to appear.
+The root `app.py` and minimal `requirements.txt` deploy the existing account, payment and counselling routers as a separate Vercel FastAPI project. The Next.js website remains in `web`. Set `DATABASE_URL` to a durable PostgreSQL database (pooled connection URL with TLS), `FRONTEND_URL` to the website origin, and `CORS_ORIGINS` to that same origin. The cloud entrypoint includes the paid Personal DNA analyzer. Research pipeline and local filesystem routes run on the separate pipeline API. Vercel connections use SQLAlchemy NullPool. Keep existing database data and back it up before connecting; do not point the cloud app at a new database expecting old local accounts to appear.
 
 Without a configured, reachable PostgreSQL database, the API returns an empty, closed counselling configuration and rejects account changes, bookings and fulfilment with HTTP 503. No account or payment state is written to Vercel temporary storage. Configure the durable database in the Vercel dashboard, then redeploy and verify `/api/health` reports `ready: true`.
 
@@ -24,7 +24,7 @@ Configure secrets directly in the backend host, never frontend public variables 
 - `FRONTEND_URL=https://ai-genomic-agent.vercel.app`.
 - Counselling variables and separate webhook described in `COUNSELLING.md`.
 
-Set Vercel `NEXT_PUBLIC_API_URL` to the verified HTTPS backend origin and rebuild. Until configured, new payment and counselling requests fail closed instead of attempting to contact a visitor's localhost. Personal local DNA processing remains local.
+Set Vercel `NEXT_PUBLIC_API_URL` to the verified HTTPS backend origin and rebuild. Until configured, new payment and counselling requests fail closed instead of attempting to contact a visitor's localhost. The desktop app runs offline. The website sends raw DNA files to the paid analysis API. See [installer setup](../DEPLOYMENT.md#personal-dna-checkout-and-installers).
 
 ## Invoicing and Tax
 

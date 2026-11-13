@@ -597,6 +597,11 @@ export default function AccountPage() {
                   )}
                 </div>
 
+                <a href="/personal#personal-access" className="inline-block text-sm font-semibold"
+                  style={{ color: "var(--flame)" }}>
+                  Open Personal DNA downloads and online analysis →
+                </a>
+
                 {/* Device list */}
                 <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <div className="flex items-center justify-between">
